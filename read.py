@@ -2,6 +2,7 @@ import codecs
 import concurrent.futures
 import os
 import pickle
+import time
 import unicodedata
 
 import ebooklib
@@ -13,6 +14,7 @@ from openai import OpenAI
 
 MODEL = 'gpt-3.5-turbo'
 CHUNK_WORDS_SIZE = 1500
+MAX_RESPONSE_LEN_TOKENS = 1024
 
 SYSTEM_PROMPT = "You help summarize nonfiction books effectively."
 SUMMARY_PROMPT = """Summarize the text below in a paragraph's length and directly use the text's voice. Do NOT use phrases like "This text discusses". This is VERY important."""
@@ -59,7 +61,7 @@ def get_completion(client, prompt):
         model=MODEL,
         temperature=0.7,
         top_p=1,
-        max_tokens=1024,
+        max_tokens=MAX_RESPONSE_LEN_TOKENS,
         messages=[
             {'role': 'system', 'content': SYSTEM_PROMPT},
             {'role': 'user', 'content': prompt},
@@ -75,12 +77,24 @@ def write_summaries(chapter_chunks):
         return (chapter_idx, chunk_idx, get_completion(client, merge(SUMMARY_PROMPT, chunk)))
 
     to_process = []
+    enc = tiktoken.encoding_for_model(MODEL)
+    current_group = []
+    current_len = 0
     for chapter_idx, chunks in enumerate(chapter_chunks):
         for chunk_idx, chunk in enumerate(chunks):
-            to_process.append((chapter_idx, chunk_idx, chunk))
+            current_len += len(enc.encode(chunk)) + MAX_RESPONSE_LEN_TOKENS
+            if current_len > 60000:
+                to_process.append(current_group)
+                current_group = [(chapter_idx, chunk_idx, chunk)]
+                current_len = 0
+            else:
+                current_group.append((chapter_idx, chunk_idx, chunk))
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        results = executor.map(map_fn, to_process)
+    results = []
+    for group in to_process:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(group)) as executor:
+            results.extend(executor.map(map_fn, group))
+        time.sleep(60)
 
     chapter_summaries = [[] for _ in range(len(chapter_chunks))]
     for chapter_idx, chunk_idx, summary in results:
