@@ -109,9 +109,6 @@ def write_summaries(client, chapter_chunks):
     with open('summaries.pkl', 'wb') as f:
         pickle.dump(chapter_summaries, f)
 
-def get_embedding(client, text, model='text-embedding-ada-002'):
-   return client.embeddings.create(input = [text], model=model).data[0].embedding
-
 def write_embeddings(client, chapter_chunks):
     def map_fn(bundle):
         chapter_idx, chunk_idx, chunk = bundle
