@@ -40,11 +40,12 @@ def get_chunks(text, prompt=SUMMARY_PROMPT):
         words = paragraph.split()
         if current_num_words + len(words) > CHUNK_WORDS_SIZE:
             chunks.append(current_chunk)
-            assert len(enc.encode(chunks[-1])) + prompt_len <= 4000
+            assert len(enc.encode(current_chunk)) + prompt_len <= 4000
             current_num_words = 0
             current_chunk = paragraph.strip()
         else:
             current_chunk += paragraph.strip()
+            current_num_words += len(words)
         current_chunk += '\n'
 
     chunks.append(current_chunk.strip())
