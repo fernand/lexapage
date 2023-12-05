@@ -91,6 +91,7 @@ def write_summaries(chapter_chunks):
                 current_len = additional_len
             else:
                 current_group.append((chapter_idx, chunk_idx, chunk))
+    to_process.append(current_group)
 
     results = []
     for group in to_process:
@@ -125,7 +126,7 @@ li {
     padding-left: 5px;
 }
 p {
-    padding-left: 10px;
+    padding-left: 5px;
 }
 </style>''')
     f.write('</head>\n')
