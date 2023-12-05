@@ -2,6 +2,7 @@ import codecs
 import concurrent.futures
 import os
 import pickle
+import unicodedata
 
 import ebooklib
 import tiktoken
@@ -16,28 +17,34 @@ CHUNK_WORDS_SIZE = 1500
 SYSTEM_PROMPT = "You help summarize nonfiction books effectively."
 SUMMARY_PROMPT = """Summarize the text below in a paragraph's length and directly use the text's voice. Do NOT use phrases like "This text discusses". This is VERY important."""
 
+def get(s):
+    return book.get_item_with_href(s).get_body_content()
+
+def parse(book, s):
+    epub_html = book.get_item_with_href(s)
+    utf8_parser = html.HTMLParser(encoding='utf-8')
+    html_tree = html.document_fromstring(epub_html.content, parser=utf8_parser)
+    root = html_tree.getroottree()
+    title = root.xpath('//a[@href]')[1].text_content()
+    text = unicodedata.normalize('NFKD', ''.join(root.find('body').itertext()))
+    return title, text
+
 def get_chunks(text, prompt=SUMMARY_PROMPT):
     enc = tiktoken.encoding_for_model(MODEL)
     prompt_len = len(enc.encode(prompt))
     chunks = []
     current_chunk = ''
-
     paragraphs = text.split('\n')
-
     current_num_words = 0
     for paragraph in paragraphs:
-        if len(paragraph.replace('\n', '')) < 8:
-            continue
         words = paragraph.split()
-        for word in words:
-            if current_num_words > CHUNK_WORDS_SIZE:
-                chunks.append(current_chunk.strip())
-                assert len(enc.encode(chunks[-1])) + prompt_len <= 4000
-                current_num_words = 0
-                current_chunk = ''
-            else:
-                current_chunk += word + ' '
-                current_num_words += 1
+        if current_num_words + len(words) > CHUNK_WORDS_SIZE:
+            chunks.append(current_chunk)
+            assert len(enc.encode(chunks[-1])) + prompt_len <= 4000
+            current_num_words = 0
+            current_chunk = paragraph.strip()
+        else:
+            current_chunk += paragraph.strip()
         current_chunk += '\n'
 
     chunks.append(current_chunk.strip())
@@ -82,19 +89,6 @@ def write_summaries(chapter_chunks):
     with open('summaries.pkl', 'wb') as f:
         pickle.dump(chapter_summaries, f)
 
-def get(s):
-    return book.get_item_with_href(s).get_body_content()
-
-def parse(book, s):
-    epub_html = book.get_item_with_href(s)
-    utf8_parser = html.HTMLParser(encoding='utf-8')
-    html_tree = html.document_fromstring(epub_html.content, parser=utf8_parser)
-    root = html_tree.getroottree()
-    title = root.xpath("//a[@href]")[1].text_content()
-    for a_element in root.xpath("//a[@href]"):
-        a_element.getparent().remove(a_element)
-    return title, ' '.join(root.find('body').itertext()).replace('\xa0.\xa0.\xa0', '')
-
 def write_html(fname: str, chapters: list[tuple[str, str]], chapter_chunks: list[list[str]], chapter_summaries: list[list[str]]):
     f = codecs.open(fname, 'w', 'utf-8')
     f.write('<!DOCTYPE html><html><head><meta charSet="utf-8"/><title>Conflict</title>\n')
@@ -105,13 +99,16 @@ main {
   margin: auto;
 }
 ol li {
-  list-style-type: none;
+    list-style-type: none;
 }
 ol {
-      padding-left: 0;
+    padding-left: 0;
 }
 li {
-      padding-left: 5px;
+    padding-left: 5px;
+}
+p {
+    padding-left: 10px;
 }
 </style>''')
     f.write('</head>\n')
@@ -120,7 +117,11 @@ li {
         title, _ = chapter
         f.write(f'<li class="toggle">\n<details><summary>{title}</summary><ol>')
         for chunk, summary in zip(chunks, summaries):
-            f.write(f'<li class="toggle"><details><summary>{summary}</summary><br><p>{chunk}</p></li>\n')
+            paragraphs = chunk.split('\n')
+            html_chunk = ''
+            for p in paragraphs:
+                html_chunk += '<p>' + p + '</p>\n'
+            f.write(f'<li class="toggle"><details><summary>{summary}</summary>{html_chunk}</li>\n')
         f.write('</ol></details></li>\n')
     f.write('</ol></details></body></html>\n')
     f.close()
