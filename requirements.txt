@@ -1,0 +1,3 @@
+ebooklib
+openai
+tiktoken
