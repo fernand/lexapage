@@ -6,6 +6,7 @@ import time
 import unicodedata
 
 import ebooklib
+import numpy as np
 import tiktoken
 
 from ebooklib import epub
@@ -39,6 +40,9 @@ def get_chunks(text, prompt=SUMMARY_PROMPT):
     paragraphs = text.split('\n')
     current_num_words = 0
     for paragraph in paragraphs:
+        paragraph = paragraph.lstrip().strip()
+        if len(paragraph) < 5:
+            continue
         words = paragraph.split()
         num_words = len(words)
         if current_num_words + num_words > CHUNK_WORDS_SIZE:
@@ -70,9 +74,7 @@ def get_completion(client, prompt):
     )
     return result.choices[0].message.content
 
-def write_summaries(chapter_chunks):
-    client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
-
+def write_summaries(client, chapter_chunks):
     def map_fn(bundle):
         chapter_idx, chunk_idx, chunk = bundle
         return (chapter_idx, chunk_idx, get_completion(client, merge(SUMMARY_PROMPT, chunk)))
@@ -107,6 +109,32 @@ def write_summaries(chapter_chunks):
     with open('summaries.pkl', 'wb') as f:
         pickle.dump(chapter_summaries, f)
 
+def get_embedding(client, text, model='text-embedding-ada-002'):
+   return client.embeddings.create(input = [text], model=model).data[0].embedding
+
+def write_embeddings(client, chapter_chunks):
+    def map_fn(bundle):
+        chapter_idx, chunk_idx, chunk = bundle
+        paragraphs = chunk.lstrip().rstrip().split('\n')
+        results = client.embeddings.create(input = paragraphs, model='text-embedding-ada-002')
+        embs = [results.data[i].embedding for i in range(len(results.data))]
+        return (chapter_idx, chunk_idx, embs)
+
+    to_process = []
+    for chapter_idx, chunks in enumerate(chapter_chunks):
+        for chunk_idx, chunk in enumerate(chunks):
+            to_process.append((chapter_idx, chunk_idx, chunk))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(to_process)) as executor:
+        results = executor.map(map_fn, to_process)
+
+    all_embs = []
+    for chapter_idx, chunk_idx, embs in results:
+        all_embs.extend(embs)
+
+    all_embs = np.array(all_embs, dtype=np.float32)
+    np.save('embs.npy', all_embs)
+
 def write_html(fname: str, chapters: list[tuple[str, str]], chapter_chunks: list[list[str]], chapter_summaries: list[list[str]]):
     f = codecs.open(fname, 'w', 'utf-8')
     f.write('<!DOCTYPE html><html><head><meta charSet="utf-8"/><title>Conflict</title>\n')
@@ -135,7 +163,7 @@ p {
         title, _ = chapter
         f.write(f'<li class="toggle">\n<details><summary>{title}</summary><ol>')
         for chunk, summary in zip(chunks, summaries):
-            paragraphs = chunk.split('\n')
+            paragraphs = chunk.lstrip().rstrip().split('\n')
             html_chunk = ''
             for p in paragraphs:
                 html_chunk += '<p>' + p + '</p>\n'
@@ -151,7 +179,9 @@ if __name__ == '__main__':
     chapters = [parse(book, file) for file in chapter_files]
 
     chapter_chunks = [get_chunks(chap[1]) for chap in chapters]
-    write_summaries(chapter_chunks)
+    client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
+    write_summaries(client, chapter_chunks)
+    write_embeddings(client, chapter_chunks)
 
     with open('summaries.pkl', 'rb') as f:
         chapter_summaries = pickle.load(f)
