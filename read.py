@@ -117,7 +117,7 @@ def write_embeddings(client, chapter_chunks):
         chapter_idx, chunk_idx, chunk = bundle
         paragraphs = chunk.lstrip().rstrip().split('\n')
         results = client.embeddings.create(input = paragraphs, model='text-embedding-ada-002')
-        embs = [results.data[i].embedding for i in range(len(results.data))]
+        embs = np.array([results.data[i].embedding for i in range(len(results.data))], dtype=np.float32)
         return (chapter_idx, chunk_idx, embs)
 
     to_process = []
@@ -128,12 +128,12 @@ def write_embeddings(client, chapter_chunks):
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(to_process)) as executor:
         results = executor.map(map_fn, to_process)
 
-    all_embs = []
+    all_embs = {}
     for chapter_idx, chunk_idx, embs in results:
-        all_embs.extend(embs)
+        all_embs[(chapter_idx, chunk_idx)] = embs
 
-    all_embs = np.array(all_embs, dtype=np.float32)
-    np.save('embs.npy', all_embs)
+    with open('embs.pkl', 'wb') as f:
+        pickle.dump(all_embs, f)
 
 def write_html(fname: str, chapters: list[tuple[str, str]], chapter_chunks: list[list[str]], chapter_summaries: list[list[str]]):
     f = codecs.open(fname, 'w', 'utf-8')
@@ -185,5 +185,7 @@ if __name__ == '__main__':
 
     with open('summaries.pkl', 'rb') as f:
         chapter_summaries = pickle.load(f)
+    with open('embs.pkl', 'rb') as f:
+        embs = pickle.load(f)
 
     write_html('conflict.html', chapters, chapter_chunks, chapter_summaries)
