@@ -40,14 +40,15 @@ def get_chunks(text, prompt=SUMMARY_PROMPT):
     current_num_words = 0
     for paragraph in paragraphs:
         words = paragraph.split()
-        if current_num_words + len(words) > CHUNK_WORDS_SIZE:
+        num_words = len(words)
+        if current_num_words + num_words > CHUNK_WORDS_SIZE:
             chunks.append(current_chunk)
             assert len(enc.encode(current_chunk)) + prompt_len <= 4000
             current_chunk = paragraph.strip()
-            current_num_words = len(words)
+            current_num_words = num_words
         else:
             current_chunk += paragraph.strip()
-            current_num_words += len(words)
+            current_num_words += num_words
         current_chunk += '\n'
 
     chunks.append(current_chunk.strip())
@@ -84,7 +85,7 @@ def write_summaries(chapter_chunks):
         for chunk_idx, chunk in enumerate(chunks):
             additional_len = len(enc.encode(chunk)) + MAX_RESPONSE_LEN_TOKENS
             current_len += additional_len
-            if current_len >= 60000:
+            if current_len >= 40000:
                 to_process.append(current_group)
                 current_group = [(chapter_idx, chunk_idx, chunk)]
                 current_len = additional_len
