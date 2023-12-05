@@ -79,7 +79,7 @@ def write_summaries(chapter_chunks):
         for chunk_idx, chunk in enumerate(chunks):
             to_process.append((chapter_idx, chunk_idx, chunk))
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         results = executor.map(map_fn, to_process)
 
     chapter_summaries = [[] for _ in range(len(chapter_chunks))]
