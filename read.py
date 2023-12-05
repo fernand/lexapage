@@ -14,7 +14,7 @@ MODEL = 'gpt-3.5-turbo'
 CHUNK_WORDS_SIZE = 1500
 
 SYSTEM_PROMPT = "You help summarize nonfiction books effectively."
-SUMMARY_PROMPT = """Summarize the text below in a paragraph's length and directly use the text's voice. Do NOT use phrases like "The text discusses". This is VERY important."""
+SUMMARY_PROMPT = """Summarize the text below in a paragraph's length and directly use the text's voice. Do NOT use phrases like "This text discusses". This is VERY important."""
 
 def get_chunks(text, prompt=SUMMARY_PROMPT):
     enc = tiktoken.encoding_for_model(MODEL)
@@ -61,7 +61,6 @@ def get_completion(client, prompt):
 
 def write_summaries(chapter_chunks):
     client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
-    chapter_chunks = chapter_chunks[:2]
 
     def map_fn(bundle):
         chapter_idx, chunk_idx, chunk = bundle
@@ -77,10 +76,10 @@ def write_summaries(chapter_chunks):
 
     chapter_summaries = [[] for _ in range(len(chapter_chunks))]
     for chapter_idx, chunk_idx, summary in results:
+        assert len(chapter_summaries[chapter_idx]) == chunk_idx
         chapter_summaries[chapter_idx].append(summary)
-        assert chapter_summaries.index(summary) == chunk_idx
 
-    with open('summaries2.pkl', 'wb') as f:
+    with open('summaries.pkl', 'wb') as f:
         pickle.dump(chapter_summaries, f)
 
 def get(s):
@@ -135,7 +134,7 @@ if __name__ == '__main__':
     chapter_chunks = [get_chunks(chap[1]) for chap in chapters]
     write_summaries(chapter_chunks)
 
-    with open('summaries2.pkl', 'rb') as f:
+    with open('summaries.pkl', 'rb') as f:
         chapter_summaries = pickle.load(f)
 
-    write_html('conflict2.html', chapters, chapter_chunks, chapter_summaries)
+    write_html('conflict.html', chapters, chapter_chunks, chapter_summaries)
