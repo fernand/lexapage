@@ -82,11 +82,12 @@ def write_summaries(chapter_chunks):
     current_len = 0
     for chapter_idx, chunks in enumerate(chapter_chunks):
         for chunk_idx, chunk in enumerate(chunks):
-            current_len += len(enc.encode(chunk)) + MAX_RESPONSE_LEN_TOKENS
-            if current_len > 60000:
+            additional_len = len(enc.encode(chunk)) + MAX_RESPONSE_LEN_TOKENS
+            current_len += additional_len
+            if current_len >= 60000:
                 to_process.append(current_group)
                 current_group = [(chapter_idx, chunk_idx, chunk)]
-                current_len = 0
+                current_len = additional_len
             else:
                 current_group.append((chapter_idx, chunk_idx, chunk))
 
