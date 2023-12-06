@@ -1,0 +1,26 @@
+main {
+  max-width: 38rem;
+  padding: 2rem;
+  margin: auto;
+}
+ol li {
+  list-style-type: none;
+}
+ol {
+  padding-left: 0;
+}
+li {
+  padding-left: 5px;
+}
+p {
+  padding-left: 5px;
+}
+#highlightButton {
+  display: none;
+  position: absolute;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  cursor: pointer;
+}

@@ -8,7 +8,6 @@ import unicodedata
 import ebooklib
 import numpy as np
 import tiktoken
-
 from ebooklib import epub
 from lxml import html
 from openai import OpenAI
@@ -19,6 +18,13 @@ MAX_RESPONSE_LEN_TOKENS = 1024
 
 SYSTEM_PROMPT = "You help summarize nonfiction books effectively."
 SUMMARY_PROMPT = """Summarize the text below in a paragraph's length and directly use the text's voice. Do NOT use phrases like "This text discusses". This is VERY important."""
+
+HTML_HEAD = """
+<head><meta charSet="utf-8"/><title>Conflict</title>
+<link rel="stylesheet" type="text/css" href="style.css">
+<script type="text/javascript" src="script.js"></script>
+</head>
+"""
 
 def get(s):
     return book.get_item_with_href(s).get_body_content()
@@ -134,39 +140,23 @@ def write_embeddings(client, chapter_chunks):
 
 def write_html(fname: str, chapters: list[tuple[str, str]], chapter_chunks: list[list[str]], chapter_summaries: list[list[str]]):
     f = codecs.open(fname, 'w', 'utf-8')
-    f.write('<!DOCTYPE html><html><head><meta charSet="utf-8"/><title>Conflict</title>\n')
-    f.write('''<style type="text/css">
-main {
-  max-width: 38rem;
-  padding: 0px;
-  margin: auto;
-}
-ol li {
-    list-style-type: none;
-}
-ol {
-    padding-left: 0;
-}
-li {
-    padding-left: 5px;
-}
-p {
-    padding-left: 5px;
-}
-</style>''')
-    f.write('</head>\n')
-    f.write('<body><ol>')
+    f.write('<!DOCTYPE html><html>')
+    f.write(HTML_HEAD)
+    f.write('<body>\n')
+    f.write('<button id="highlightButton">Find</button>\n')
+    f.write('<ol>')
     for chapter, chunks, summaries in zip(chapters, chapter_chunks, chapter_summaries):
         title, _ = chapter
-        f.write(f'<li class="toggle">\n<details><summary>{title}</summary><ol>')
+        f.write(f'<li>\n<details><summary>{title}</summary><ol>')
         for chunk, summary in zip(chunks, summaries):
             paragraphs = chunk.lstrip().rstrip().split('\n')
             html_chunk = ''
             for p in paragraphs:
                 html_chunk += '<p>' + p + '</p>\n'
-            f.write(f'<li class="toggle"><details><summary>{summary}</summary>{html_chunk}</li>\n')
+            f.write(f'<li><details><summary>{summary}</summary>{html_chunk}</li>\n')
         f.write('</ol></details></li>\n')
-    f.write('</ol></details></body></html>\n')
+    f.write('</ol></details>\n')
+    f.write('</body></html>\n')
     f.close()
 
 if __name__ == '__main__':
@@ -176,13 +166,13 @@ if __name__ == '__main__':
     chapters = [parse(book, file) for file in chapter_files]
 
     chapter_chunks = [get_chunks(chap[1]) for chap in chapters]
-    client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
-    write_summaries(client, chapter_chunks)
-    write_embeddings(client, chapter_chunks)
+    # client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
+    # write_summaries(client, chapter_chunks)
+    # write_embeddings(client, chapter_chunks)
 
     with open('summaries.pkl', 'rb') as f:
         chapter_summaries = pickle.load(f)
     with open('embs.pkl', 'rb') as f:
         embs = pickle.load(f)
 
-    write_html('conflict.html', chapters, chapter_chunks, chapter_summaries)
+    write_html('site/index.html', chapters, chapter_chunks, chapter_summaries)
