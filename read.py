@@ -148,15 +148,15 @@ def write_html(fname: str, chapters: list[tuple[str, str]], chapter_chunks: list
     f.write('<body>\n')
     f.write('<button id="highlightButton">Find</button>\n')
     f.write('<ol>')
-    for chapter, chunks, summaries in zip(chapters, chapter_chunks, chapter_summaries):
+    for chapter_idx, (chapter, chunks, summaries) in enumerate(zip(chapters, chapter_chunks, chapter_summaries)):
         title, _ = chapter
-        f.write(f'<li>\n<details><summary>{title}</summary><ol>')
-        for chunk, summary in zip(chunks, summaries):
+        f.write(f'<li>\n<details><summary>{title}</summary><ol>\n')
+        for chunk_idx, (chunk, summary) in enumerate(zip(chunks, summaries)):
             paragraphs = chunk.lstrip().rstrip().split('\n')
             html_chunk = ''
-            for p in paragraphs:
-                html_chunk += '<p>' + p + '</p>\n'
-            f.write(f'<li><details><summary>{summary}</summary>{html_chunk}</li>\n')
+            for p_idx, p in enumerate(paragraphs):
+                html_chunk += f'<p id="{chapter_idx},{chunk_idx},{p_idx}">' + p + '</p>\n'
+            f.write(f'<li><details><summary id="{chapter_idx},{chunk_idx}">{summary}</summary>\n{html_chunk}</li>\n')
         f.write('</ol></details></li>\n')
     f.write('</ol></details>\n')
     f.write('</body></html>\n')
@@ -175,7 +175,7 @@ if __name__ == '__main__':
 
     with open('summaries.pkl', 'rb') as f:
         chapter_summaries = pickle.load(f)
-    # with open('embs.pkl', 'rb') as f:
-    #     embs = pickle.load(f)
+    with open('embs.pkl', 'rb') as f:
+        embs = pickle.load(f)
 
     write_html('site/index.html', chapters, chapter_chunks, chapter_summaries)
