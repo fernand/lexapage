@@ -29,14 +29,10 @@ def get_html_head(title):
 </head>
 """
 
-def get(s):
-    return book.get_item_with_href(s).get_body_content()
-
 def parse(book, s):
     epub_html = book.get_item_with_href(s)
     utf8_parser = html.HTMLParser(encoding='utf-8')
-    html_tree = html.document_fromstring(epub_html.content, parser=utf8_parser)
-    root = html_tree.getroottree()
+    root = html.document_fromstring(epub_html.content, parser=utf8_parser)
     title = root.xpath('//a[@href]')[1].text_content()
     text = unicodedata.normalize('NFKD', ''.join(root.find('body').itertext()))
     return title, text

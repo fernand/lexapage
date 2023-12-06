@@ -1,6 +1,6 @@
 'use strict';
 
-const K = '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'
+const K = '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';
 
 let embs;
 fetch('embs.json')
