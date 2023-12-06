@@ -1,7 +1,6 @@
-main {
-  max-width: 38rem;
-  padding: 2rem;
-  margin: auto;
+body {
+  max-width: 100%;
+  font-family: "Verdana", sans-serif;
 }
 ol li {
   list-style-type: none;

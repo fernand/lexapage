@@ -20,7 +20,9 @@ SYSTEM_PROMPT = "You help summarize nonfiction books effectively."
 SUMMARY_PROMPT = """Summarize the text below in a paragraph's length and directly use the text's voice. Do NOT use phrases like "This text discusses". This is VERY important."""
 
 HTML_HEAD = """
-<head><meta charSet="utf-8"/><title>Conflict</title>
+<head>
+<meta charSet="utf-8" name=viewport content="width=device-width,initial-scale=1">
+<title>Conflict</title>
 <link rel="stylesheet" type="text/css" href="style.css">
 <script type="text/javascript" src="script.js"></script>
 </head>
