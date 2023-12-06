@@ -1,19 +1,35 @@
-body {
-  max-width: 100%;
-  font-family: "Verdana", sans-serif;
+* {
+  max-width: 800px;
+  margin: 0;
+  padding: 0;
 }
+
+html {
+  overflow-y: scroll;
+  height: 100%;
+  font: 100%/1.5 sans-serif;
+  word-wrap: break-word;
+  margin: 0 auto;
+  padding: 1.5em;
+}
+
+p {
+  margin: 1em 0;
+  padding-left: 5px;
+}
+
 ol li {
   list-style-type: none;
 }
+
 ol {
   padding-left: 0;
 }
+
 li {
   padding-left: 5px;
 }
-p {
-  padding-left: 5px;
-}
+
 #highlightButton {
   display: none;
   position: absolute;

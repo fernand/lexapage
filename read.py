@@ -19,10 +19,11 @@ MAX_RESPONSE_LEN_TOKENS = 1024
 SYSTEM_PROMPT = "You help summarize nonfiction books effectively."
 SUMMARY_PROMPT = """Summarize the text below in a paragraph's length and directly use the text's voice. Do NOT use phrases like "This text discusses". This is VERY important."""
 
-HTML_HEAD = """
+def get_html_head(title):
+    return f"""
 <head>
 <meta charSet="utf-8" name=viewport content="width=device-width,initial-scale=1">
-<title>Conflict</title>
+<title>{title}</title>
 <link rel="stylesheet" type="text/css" href="style.css">
 <script type="text/javascript" src="script.js"></script>
 </head>
@@ -143,16 +144,16 @@ def write_embeddings(client, chapter_chunks):
     with open('site/embs.json', 'w') as f:
         json.dump(all_embs, f)
 
-def write_html(fname: str, chapters: list[tuple[str, str]], chapter_chunks: list[list[str]], chapter_summaries: list[list[str]]):
+def write_html(title, fname: str, chapters: list[tuple[str, str]], chapter_chunks: list[list[str]], chapter_summaries: list[list[str]]):
     f = codecs.open(fname, 'w', 'utf-8')
     f.write('<!DOCTYPE html><html>')
-    f.write(HTML_HEAD)
+    f.write(get_html_head(title))
     f.write('<body>\n')
     f.write('<button id="highlightButton">Find</button>\n')
     f.write('<ol>')
     for chapter_idx, (chapter, chunks, summaries) in enumerate(zip(chapters, chapter_chunks, chapter_summaries)):
-        title, _ = chapter
-        f.write(f'<li>\n<details><summary>{title}</summary><ol>\n')
+        chapter_title, _ = chapter
+        f.write(f'<li>\n<details><summary>{chapter_title}</summary><ol>\n')
         for chunk_idx, (chunk, summary) in enumerate(zip(chunks, summaries)):
             paragraphs = chunk.lstrip().rstrip().split('\n')
             html_chunk = ''
@@ -165,7 +166,8 @@ def write_html(fname: str, chapters: list[tuple[str, str]], chapter_chunks: list
     f.close()
 
 if __name__ == '__main__':
-    book = epub.read_epub('Conflict.epub')
+    title = 'Conflict'
+    book = epub.read_epub(f'{title}.epub')
     l = [i.get_name() for i in book.get_items() if i.get_type() == ebooklib.ITEM_DOCUMENT]
     chapter_files = [s for s in l if 'Chapter' in s or 'Introduction' in s]
     chapters = [parse(book, file) for file in chapter_files]
@@ -180,4 +182,4 @@ if __name__ == '__main__':
     with open('embs.pkl', 'rb') as f:
         embs = pickle.load(f)
 
-    write_html('site/index.html', chapters, chapter_chunks, chapter_summaries)
+    write_html(title, f'site/{title.lower()}.html', chapters, chapter_chunks, chapter_summaries)
