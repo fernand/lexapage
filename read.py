@@ -1,12 +1,12 @@
 import codecs
 import concurrent.futures
+import json
 import os
 import pickle
 import time
 import unicodedata
 
 import ebooklib
-import numpy as np
 import tiktoken
 from ebooklib import epub
 from lxml import html
@@ -120,7 +120,7 @@ def write_embeddings(client, chapter_chunks):
         chapter_idx, chunk_idx, chunk = bundle
         paragraphs = chunk.lstrip().rstrip().split('\n')
         results = client.embeddings.create(input = paragraphs, model='text-embedding-ada-002')
-        embs = np.array([results.data[i].embedding for i in range(len(results.data))], dtype=np.float32)
+        embs = [results.data[i].embedding for i in range(len(results.data))]
         return (chapter_idx, chunk_idx, embs)
 
     to_process = []
@@ -133,10 +133,13 @@ def write_embeddings(client, chapter_chunks):
 
     all_embs = {}
     for chapter_idx, chunk_idx, embs in results:
-        all_embs[(chapter_idx, chunk_idx)] = embs
+        all_embs[f'{chapter_idx},{chunk_idx}'] = embs
 
     with open('embs.pkl', 'wb') as f:
         pickle.dump(all_embs, f)
+
+    with open('site/embs.json', 'w') as f:
+        json.dump(all_embs, f)
 
 def write_html(fname: str, chapters: list[tuple[str, str]], chapter_chunks: list[list[str]], chapter_summaries: list[list[str]]):
     f = codecs.open(fname, 'w', 'utf-8')
@@ -172,7 +175,7 @@ if __name__ == '__main__':
 
     with open('summaries.pkl', 'rb') as f:
         chapter_summaries = pickle.load(f)
-    with open('embs.pkl', 'rb') as f:
-        embs = pickle.load(f)
+    # with open('embs.pkl', 'rb') as f:
+    #     embs = pickle.load(f)
 
     write_html('site/index.html', chapters, chapter_chunks, chapter_summaries)
