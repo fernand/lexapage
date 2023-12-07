@@ -77,3 +77,4 @@ function showButton() {
 
 document.addEventListener('mouseup', showButton);
 document.addEventListener('touchend', showButton);
+document.addEventListener('touchcancel', showButton);

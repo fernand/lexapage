@@ -1,15 +1,19 @@
 import codecs
+from collections import defaultdict
 import concurrent.futures
+from dataclasses import dataclass
 import json
 import os
+from pathlib import PurePosixPath
 import pickle
 import time
 import unicodedata
 
+# TODO: Remove this crappy ebook library
 import ebooklib
 import tiktoken
 from ebooklib import epub
-from lxml import html
+from lxml import etree, html
 from openai import OpenAI
 
 MODEL = 'gpt-3.5-turbo'
@@ -18,6 +22,20 @@ MAX_RESPONSE_LEN_TOKENS = 1024
 
 SYSTEM_PROMPT = "You help summarize nonfiction books effectively."
 SUMMARY_PROMPT = """Summarize the text below in a paragraph's length and directly use the text's voice. Do NOT use phrases like "This text discusses". This is VERY important."""
+
+def toc_prompt(toc_html):
+    return f"""Given the EPUB table of contents XML file, output the HTML 'p' tag class names corresponding to sections or subsections and separately output the 'p' tag class names for the actual chapters. You should output the two results as Python lists, and not output anything else.
+
+This is an example response that you should adhere to:
+```
+section_classes = ["book", "section"]
+chapter_classes = ["chapter"]
+```
+
+EPUB table of contents:"
+{toc_html}
+```
+"""
 
 def get_html_head(title):
     return f"""
@@ -29,13 +47,56 @@ def get_html_head(title):
 </head>
 """
 
-def parse(book, s):
-    epub_html = book.get_item_with_href(s)
+@dataclass(frozen=True)
+class Chapter:
+    path: str
+    anchor: str
+    name: str
+
+def print_tree(tree):
+    print(etree.tostring(tree, pretty_print=True).decode('utf-8'))
+
+def class_query(classes):
+    return ' or '.join([f'@class="{cls}"' for cls in classes])
+
+def get_tree_from_epub_path(book, path):
+    epub_html = book.get_item_with_href(path)
+    # TODO: Look into encoding.
     utf8_parser = html.HTMLParser(encoding='utf-8')
-    root = html.document_fromstring(epub_html.content, parser=utf8_parser)
-    title = root.xpath('//a[@href]')[1].text_content()
-    text = unicodedata.normalize('NFKD', ''.join(root.find('body').itertext()))
-    return title, text
+    return html.document_fromstring(epub_html.content, parser=utf8_parser)
+
+# TODO: Also return the sections and ensure that sub sections and chapters are nested.
+def get_sections_and_chapters(book):
+    l = [i.get_name() for i in book.get_items() if i.get_type() == ebooklib.ITEM_DOCUMENT]
+    contents_path = None
+    for path in l:
+        if 'contents' in path.lower():
+            contents_path = PurePosixPath(path)
+            break
+    assert contents_path is not None
+    root: html.HtmlElement = get_tree_from_epub_path(book, str(contents_path))
+
+    section_classes = ['toc-book-title',]
+    chapter_classes = ['toc-entry', 'toc', 'toc_t']
+
+    section_elements = root.xpath(f'//p[{class_query(section_classes)}]')
+    sections_text = [s.text_content() for s in section_elements]
+
+    chapter_elements = root.xpath(f'//p[{class_query(chapter_classes)}]')
+    grouped_chapters: dict[str, list[Chapter]] = defaultdict(lambda: [])
+    for el in chapter_elements:
+        title = el.text_content()
+        link_matches = list(el.iterlinks())
+        assert len(link_matches) == 1
+        link = link_matches[0][2]
+        parts = link.split('#')
+        path = str(contents_path.parent / PurePosixPath(parts[0]))
+        assert len(parts) == 2
+        if 'bibliography' in parts[0].lower() or 'index' in parts[0].lower():
+            continue
+        grouped_chapters[path].append(Chapter(path, parts[1], title))
+
+    return grouped_chapters
 
 def get_chunks(text, prompt=SUMMARY_PROMPT):
     enc = tiktoken.encoding_for_model(MODEL)
@@ -162,20 +223,48 @@ def write_html(title, fname: str, chapters: list[tuple[str, str]], chapter_chunk
     f.close()
 
 if __name__ == '__main__':
-    title = 'Conflict'
+    title = 'Ancient_City'
+    # title = 'Conflict'
     book = epub.read_epub(f'{title}.epub')
-    l = [i.get_name() for i in book.get_items() if i.get_type() == ebooklib.ITEM_DOCUMENT]
-    chapter_files = [s for s in l if 'Chapter' in s or 'Introduction' in s]
-    chapters = [parse(book, file) for file in chapter_files]
 
-    chapter_chunks = [get_chunks(chap[1]) for chap in chapters]
+    grouped_chapters = get_sections_and_chapters(book)
+
+    chapters_text = []
+    for path, chapters in grouped_chapters.items():
+        root = get_tree_from_epub_path(book, path)
+        for i, chapter in enumerate(chapters):
+            links = root.xpath(f'//*[@id="{chapter.anchor}"]')
+            assert len(links) == 1
+            link = links[0]
+            if i == len(chapters) - 1:
+                chapters_text.append(
+                    unicodedata.normalize('NFKD',''.join(link.getparent().itertext()))
+                )
+
+    # Get xhtml paths and anchor ids for each matches
+    # For sections just get the text from the TOC
+    # For chapters, for each consecutive two chapter nodes, if they are in the same xhtml path
+    # get the parent of the first with getparent(), then get the first anchor node index with .index()
+    # start = r.xpath('//*[@id="_idTextAnchor102"]')[0]
+    # end = ...
+    # startp = start.getparent()
+    # starti = startp.index(start)
+    # try: endi = startp.index(end)
+    # [next(start.itertext()) for _ in range()]
+
+    # text = unicodedata.normalize('NFKD', ''.join(root.find('body').itertext()))
+
+    # chapter_files = [s for s in l if 'Chapter' in s or 'Introduction' in s]
+    # chapters = [parse(book, file) for file in chapter_files]
+
+    # chapter_chunks = [get_chunks(chap[1]) for chap in chapters]
     # client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
     # write_summaries(client, chapter_chunks)
     # write_embeddings(client, chapter_chunks)
 
-    with open('summaries.pkl', 'rb') as f:
-        chapter_summaries = pickle.load(f)
-    with open('embs.pkl', 'rb') as f:
-        embs = pickle.load(f)
+    # with open('summaries.pkl', 'rb') as f:
+    #     chapter_summaries = pickle.load(f)
+    # with open('embs.pkl', 'rb') as f:
+    #     embs = pickle.load(f)
 
-    write_html(title, f'site/{title.lower()}.html', chapters, chapter_chunks, chapter_summaries)
+    # write_html(title, f'site/{title.lower()}.html', chapters, chapter_chunks, chapter_summaries)
