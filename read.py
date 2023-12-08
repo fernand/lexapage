@@ -58,6 +58,8 @@ class Chapter:
     path: str
     anchor: str
     name: str
+    # Monotonically increasing number. For embeddings.
+    id: int
 
 def print_tree(tree):
     print(etree.tostring(tree, pretty_print=True).decode('utf-8'))
@@ -92,6 +94,7 @@ def get_sections_and_chapters(book) -> list[tuple[Optional[Section], list[Chapte
     section_chapters: list[tuple[Optional[Section], list[Chapter]]] = []
     current_section = None
     current_chapters = []
+    curr_chapter_id = 0
     # TODO: If there is a conclusion at the end with no parent section, it will get added
     # to the last section instead of an empty section.
     for el in root.iter():
@@ -111,11 +114,12 @@ def get_sections_and_chapters(book) -> list[tuple[Optional[Section], list[Chapte
                 current_chapters = []
                 current_section = Section(path, title)
             elif el in chapter_elements:
-                chapter = Chapter(path, parts[1], title)
+                chapter = Chapter(path, parts[1], title, curr_chapter_id)
                 if current_section is None:
                     section_chapters.append((None, [chapter]))
                 else:
                     current_chapters.append(chapter)
+                curr_chapter_id += 1
     if len(current_chapters) > 0:
         section_chapters.append((current_section, current_chapters))
     return section_chapters
@@ -239,7 +243,7 @@ def write_embeddings(client, title, chapter_chunks: dict[Chapter, list[str]]):
 
     all_embs = {}
     for chapter, chunk_idx, embs in results:
-        all_embs[f'{chapter.anchor},{chunk_idx}'] = embs
+        all_embs[f'{chapter.id},{chunk_idx}'] = embs
 
     with open(f'{title}_embs.pkl', 'wb') as f:
         pickle.dump(all_embs, f)
@@ -247,24 +251,34 @@ def write_embeddings(client, title, chapter_chunks: dict[Chapter, list[str]]):
     with open(f'site/{title}_embs.json', 'w') as f:
         json.dump(all_embs, f)
 
-def write_html(title, fname: str, chapters: list[tuple[str, str]], chapter_chunks: list[list[str]], chapter_summaries: list[list[str]]):
+def write_html(
+        title: str,
+        fname: str,
+        section_chapters: list[tuple[Optional[Section], list[Chapter]]],
+        chapter_chunks: dict[Chapter, list[str]],
+        chapter_summaries: dict[Chapter, list[str]],
+    ):
     f = codecs.open(fname, 'w', 'utf-8')
     f.write('<!DOCTYPE html><html>')
     f.write(get_html_head(title))
     f.write('<body>\n')
     f.write('<button id="highlightButton">Find</button>\n')
     f.write('<ol>')
-    for chapter_idx, (chapter, chunks, summaries) in enumerate(zip(chapters, chapter_chunks, chapter_summaries)):
-        chapter_title, _ = chapter
-        f.write(f'<li>\n<details><summary>{chapter_title}</summary><ol>\n')
-        for chunk_idx, (chunk, summary) in enumerate(zip(chunks, summaries)):
-            paragraphs = chunk.lstrip().rstrip().split('\n')
-            html_chunk = ''
-            for p_idx, p in enumerate(paragraphs):
-                html_chunk += f'<p id="{chapter_idx},{chunk_idx},{p_idx}">' + p + '</p>\n'
-            f.write(f'<li><details><summary id="{chapter_idx},{chunk_idx}">{summary}</summary>\n{html_chunk}</li>\n')
-        f.write('</ol></details></li>\n')
-    f.write('</ol></details>\n')
+    for section, chapters in section_chapters:
+        if section is not None:
+            f.write(f'<li>\n<details><summary>{section.name}</summary><ol>\n')
+        for chapter in chapters:
+            f.write(f'<li>\n<details><summary>{chapter.name}</summary><ol>\n')
+            for chunk_idx, (chunk, summary) in enumerate(zip(chapter_chunks[chapter], chapter_summaries[chapter])):
+                paragraphs = chunk.lstrip().rstrip().split('\n')
+                html_chunk = ''
+                for p_idx, p in enumerate(paragraphs):
+                    html_chunk += f'<p id="{chapter.id},{chunk_idx},{p_idx}">' + p + '</p>\n'
+                f.write(f'<li><details><summary id="{chapter.id},{chunk_idx}">{summary}</summary>\n{html_chunk}</li>\n')
+            f.write('</ol></details></li>\n')
+        if section is not None:
+            f.write('</ol></details></li>\n')
+    f.write('</ol>\n')
     f.write('</body></html>\n')
     f.close()
 
@@ -280,10 +294,9 @@ if __name__ == '__main__':
         chapter: get_chunks(text) for chapter, text in chapter_text.items()
     }
     client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
-    # write_summaries(client, title, chapter_chunks)
+    write_summaries(client, title, chapter_chunks)
     write_embeddings(client, title, chapter_chunks)
 
-    # with open(f'{title}_summaries.pkl', 'rb') as f:
-    #     chapter_summaries = pickle.load(f)
-
-    # write_html(title, f'site/{title.lower()}.html', chapters, chapter_chunks, chapter_summaries)
+    with open(f'{title}_summaries.pkl', 'rb') as f:
+        chapter_summaries = pickle.load(f)
+    write_html(title, f'site/{title.lower()}.html', section_chapters, chapter_chunks, chapter_summaries)
