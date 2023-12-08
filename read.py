@@ -18,7 +18,7 @@ from lxml import etree, html
 from openai import OpenAI
 
 MODEL = 'gpt-3.5-turbo'
-CHUNK_WORDS_SIZE = 1500
+CHUNK_WORDS_SIZE = 1450
 MAX_RESPONSE_LEN_TOKENS = 1024
 
 SYSTEM_PROMPT = "You help summarize nonfiction books effectively."
@@ -155,7 +155,6 @@ def get_chapters_text(section_chapters) -> dict[Chapter, str]:
 
 def get_chunks(text, prompt=SUMMARY_PROMPT):
     enc = tiktoken.encoding_for_model(MODEL)
-    prompt_len = len(enc.encode(prompt))
     chunks = []
     current_chunk = ''
     paragraphs = text.split('\n')
@@ -168,7 +167,7 @@ def get_chunks(text, prompt=SUMMARY_PROMPT):
         num_words = len(words)
         if current_num_words + num_words > CHUNK_WORDS_SIZE:
             chunks.append(current_chunk)
-            assert len(enc.encode(current_chunk)) + prompt_len <= 4000
+            assert len(enc.encode(merge(prompt, current_chunk))) < 4097 - MAX_RESPONSE_LEN_TOKENS
             current_chunk = paragraph.strip()
             current_num_words = num_words
         else:
@@ -177,6 +176,7 @@ def get_chunks(text, prompt=SUMMARY_PROMPT):
         current_chunk += '\n'
 
     chunks.append(current_chunk.strip())
+    assert len(enc.encode(merge(prompt, current_chunk))) < 4097 - MAX_RESPONSE_LEN_TOKENS
     return chunks
 
 def merge(prompt, chunk):
@@ -206,9 +206,9 @@ def write_summaries(client, title, chapter_chunks: dict[Chapter, list[str]]):
     current_len = 0
     for chapter, chunks in chapter_chunks.items():
         for chunk_idx, chunk in enumerate(chunks):
-            additional_len = len(enc.encode(chunk)) + MAX_RESPONSE_LEN_TOKENS
+            additional_len = len(enc.encode(merge(SUMMARY_PROMPT, chunk))) + MAX_RESPONSE_LEN_TOKENS
             current_len += additional_len
-            if current_len >= 40000:
+            if current_len >= 60000:
                 to_process.append(current_group)
                 current_group = [(chapter, chunk_idx, chunk)]
                 current_len = additional_len
@@ -288,8 +288,8 @@ def write_html(
     f.close()
 
 if __name__ == '__main__':
-    # title = 'Ancient_City'
-    title = 'Conflict'
+    title = 'Ancient_City'
+    # title = 'Conflict'
     book = epub.read_epub(f'{title}.epub')
     title = title.lower()
 
