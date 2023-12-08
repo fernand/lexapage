@@ -18,7 +18,7 @@ from lxml import etree, html
 from openai import OpenAI
 
 MODEL = 'gpt-3.5-turbo'
-CHUNK_WORDS_SIZE = 1450
+CHUNK_WORDS_SIZE = 1400
 MAX_RESPONSE_LEN_TOKENS = 1024
 
 SYSTEM_PROMPT = "You help summarize nonfiction books effectively."
