@@ -14,16 +14,8 @@ p {
   padding-left: 5px;
 }
 
-ol li {
-  list-style-type: none;
-}
-
-ol {
-  padding-left: 0;
-}
-
-li {
-  padding-left: 5px;
+details {
+    padding: 5px;
 }
 
 #highlightButton {

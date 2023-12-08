@@ -270,22 +270,20 @@ def write_html(
     f.write(get_html_head(title))
     f.write('<body>\n')
     f.write('<button id="highlightButton">Find</button>\n')
-    f.write('<ol>')
     for section, chapters in section_chapters:
         if section is not None:
-            f.write(f'<li>\n<details><summary>{section.name}</summary><ol>\n')
+            f.write(f'<details><summary>{section.name}</summary>\n')
         for chapter in chapters:
-            f.write(f'<li>\n<details><summary>{chapter.name}</summary><ol>\n')
+            f.write(f'<details><summary>{chapter.name}</summary>\n')
             for chunk_idx, (chunk, summary) in enumerate(zip(chapter_chunks[chapter], chapter_summaries[chapter])):
                 paragraphs = chunk.lstrip().rstrip().split('\n')
                 html_chunk = ''
                 for p_idx, p in enumerate(paragraphs):
                     html_chunk += f'<p id="{chapter.id},{chunk_idx},{p_idx}">' + p + '</p>\n'
-                f.write(f'<li><details><summary id="{chapter.id},{chunk_idx}">{summary}</summary>\n{html_chunk}</li>\n')
-            f.write('</ol></details></li>\n')
+                f.write(f'<details><summary id="{chapter.id},{chunk_idx}">{summary}</summary>\n{html_chunk}\n</details>\n')
+            f.write('</details>\n')
         if section is not None:
-            f.write('</ol></details></li>\n')
-    f.write('</ol>\n')
+            f.write('</details>\n')
     f.write('</body></html>\n')
     f.close()
 
