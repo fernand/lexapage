@@ -208,7 +208,7 @@ def write_summaries(client, title, chapter_chunks: dict[Chapter, list[str]]):
         for chunk_idx, chunk in enumerate(chunks):
             additional_len = len(enc.encode(merge(SUMMARY_PROMPT, chunk))) + MAX_RESPONSE_LEN_TOKENS
             current_len += additional_len
-            if current_len >= 60000:
+            if current_len >= 55000:
                 to_process.append(current_group)
                 current_group = [(chapter, chunk_idx, chunk)]
                 current_len = additional_len
@@ -220,7 +220,7 @@ def write_summaries(client, title, chapter_chunks: dict[Chapter, list[str]]):
     for group in to_process:
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(group)) as executor:
             results.extend(executor.map(map_fn, group))
-        time.sleep(60)
+        time.sleep(61)
 
     chapter_summaries = {chapter: [] for chapter in chapter_chunks}
     for chapter, chunk_idx, summary in results:
