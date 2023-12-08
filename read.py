@@ -131,6 +131,7 @@ def get_chapters_text(section_chapters) -> dict[Chapter, str]:
         current_text = ''
         current_link_node: html.HtmlElement = None
         chapter_idx = 0
+        current_p = None
         for node in root.iter():
             if node in link_nodes:
                 current_link_node = node
@@ -138,11 +139,16 @@ def get_chapters_text(section_chapters) -> dict[Chapter, str]:
                     chapter_text[chapters[chapter_idx]] = unicodedata.normalize('NFKD', current_text)
                     current_text = ''
                     chapter_idx += 1
-            if current_link_node is not None and (node.tag == 'p' or node.getparent().tag == 'p'):
+            is_p = node.tag == 'p'
+            if current_link_node is not None and (is_p or node.getparent().tag == 'p'):
+                if (is_p and node != current_p) or (not is_p and node.getparent() != current_p):
+                    current_text += '\n'
+                if node.tag == 'p':
+                    current_p = node
                 if node.text:
-                    current_text += node.text
+                    current_text += node.text.replace('\n', '')
                 if node.tail:
-                    current_text += node.tail
+                    current_text += node.tail.replace('\n', '')
         assert len(current_text) > 0
         chapter_text[chapters[chapter_idx]] = unicodedata.normalize('NFKD', current_text)
     return chapter_text
@@ -282,8 +288,8 @@ def write_html(
     f.close()
 
 if __name__ == '__main__':
-    title = 'Ancient_City'
-    # title = 'Conflict'
+    # title = 'Ancient_City'
+    title = 'Conflict'
     book = epub.read_epub(f'{title}.epub')
 
     section_chapters = get_sections_and_chapters(book)
