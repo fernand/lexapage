@@ -18,7 +18,6 @@ from lxml import etree, html
 from openai import OpenAI
 
 MODEL = 'gpt-3.5-turbo'
-CHUNK_WORDS_SIZE = 1400
 MAX_RESPONSE_LEN_TOKENS = 1024
 
 SYSTEM_PROMPT = "You help summarize nonfiction books effectively."
@@ -155,28 +154,28 @@ def get_chapters_text(section_chapters) -> dict[Chapter, str]:
 
 def get_chunks(text, prompt=SUMMARY_PROMPT):
     enc = tiktoken.encoding_for_model(MODEL)
+    system_prompt_len = len(enc.encode(SYSTEM_PROMPT))
+    prompt_len = len(enc.encode(prompt))
     chunks = []
     current_chunk = ''
     paragraphs = text.split('\n')
-    current_num_words = 0
+    current_num_tokens = system_prompt_len + prompt_len + MAX_RESPONSE_LEN_TOKENS
     for paragraph in paragraphs:
         paragraph = paragraph.lstrip().strip()
         if len(paragraph) < 5:
             continue
-        words = paragraph.split()
-        num_words = len(words)
-        if current_num_words + num_words > CHUNK_WORDS_SIZE:
+        num_tokens = len(enc.encode(paragraph))
+        assert num_tokens + system_prompt_len + prompt_len + MAX_RESPONSE_LEN_TOKENS < 4090
+        if current_num_tokens + num_tokens > 4090:
             chunks.append(current_chunk)
-            assert len(enc.encode(merge(prompt, current_chunk))) < 4097 - MAX_RESPONSE_LEN_TOKENS
             current_chunk = paragraph.strip()
-            current_num_words = num_words
+            current_num_tokens = system_prompt_len + prompt_len + num_tokens + MAX_RESPONSE_LEN_TOKENS
         else:
             current_chunk += paragraph.strip()
-            current_num_words += num_words
+            current_num_tokens += num_tokens + 2 # Gotta account for the new line
         current_chunk += '\n'
 
     chunks.append(current_chunk.strip())
-    assert len(enc.encode(merge(prompt, current_chunk))) < 4097 - MAX_RESPONSE_LEN_TOKENS
     return chunks
 
 def merge(prompt, chunk):
@@ -202,13 +201,16 @@ def write_summaries(client, title, chapter_chunks: dict[Chapter, list[str]]):
 
     to_process = []
     enc = tiktoken.encoding_for_model(MODEL)
+    system_prompt_len = len(enc.encode(SYSTEM_PROMPT))
     current_group = []
     current_len = 0
     for chapter, chunks in chapter_chunks.items():
         for chunk_idx, chunk in enumerate(chunks):
-            additional_len = len(enc.encode(merge(SUMMARY_PROMPT, chunk))) + MAX_RESPONSE_LEN_TOKENS
+            # Add a buffer of 10 tokens just in case
+            additional_len = len(enc.encode(merge(SUMMARY_PROMPT, chunk))) + MAX_RESPONSE_LEN_TOKENS + system_prompt_len + 10
+            assert additional_len < 4096
             current_len += additional_len
-            if current_len >= 40000:
+            if current_len >= 60000:
                 to_process.append(current_group)
                 current_group = [(chapter, chunk_idx, chunk)]
                 current_len = additional_len
