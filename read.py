@@ -146,9 +146,9 @@ def get_chapters_text(section_chapters) -> dict[Chapter, str]:
                 if node.tag == 'p':
                     current_p = node
                 if node.text:
-                    current_text += node.text.replace('\n', '')
+                    current_text += node.text.replace('\n', '').replace('\t', '')
                 if node.tail:
-                    current_text += node.tail.replace('\n', '')
+                    current_text += node.tail.replace('\n', '').replace('\t', '')
         assert len(current_text) > 0
         chapter_text[chapters[chapter_idx]] = unicodedata.normalize('NFKD', current_text)
     return chapter_text
@@ -291,6 +291,7 @@ if __name__ == '__main__':
     # title = 'Ancient_City'
     title = 'Conflict'
     book = epub.read_epub(f'{title}.epub')
+    title = title.lower()
 
     section_chapters = get_sections_and_chapters(book)
     chapter_text = get_chapters_text(section_chapters)
