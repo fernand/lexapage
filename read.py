@@ -208,7 +208,7 @@ def write_summaries(client, title, chapter_chunks: dict[Chapter, list[str]]):
         for chunk_idx, chunk in enumerate(chunks):
             additional_len = len(enc.encode(merge(SUMMARY_PROMPT, chunk))) + MAX_RESPONSE_LEN_TOKENS
             current_len += additional_len
-            if current_len >= 55000:
+            if current_len >= 40000:
                 to_process.append(current_group)
                 current_group = [(chapter, chunk_idx, chunk)]
                 current_len = additional_len
