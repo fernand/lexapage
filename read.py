@@ -11,9 +11,10 @@ import unicodedata
 
 # TODO: Remove this crappy ebook library
 import ebooklib
-import tiktoken
 from ebooklib import epub
+import tiktoken
 from lxml import etree, html
+# TODO: Remove
 from openai import OpenAI
 
 MODEL = 'gpt-3.5-turbo'
@@ -56,14 +57,17 @@ class Chapter:
 def print_tree(tree):
     print(etree.tostring(tree, pretty_print=True).decode('utf-8'))
 
-def class_query(classes):
-    return ' or '.join([f'@class="{cls}"' for cls in classes])
+def query(attribute, values):
+    return ' or '.join([f'@{attribute}="{value}"' for value in values])
 
 def get_tree_from_epub_path(book, path):
     epub_html = book.get_item_with_href(path)
     # TODO: Look into encoding.
     utf8_parser = html.HTMLParser(encoding='utf-8')
     return html.document_fromstring(epub_html.content, parser=utf8_parser)
+
+SECTION_CLASSES = ['toc-book-title',]
+CHAPTER_CLASSES = ['toc-entry', 'toc', 'toc_t']
 
 # TODO: Also return the sections and ensure that sub sections and chapters are nested.
 def get_sections_and_chapters(book):
@@ -76,13 +80,10 @@ def get_sections_and_chapters(book):
     assert contents_path is not None
     root: html.HtmlElement = get_tree_from_epub_path(book, str(contents_path))
 
-    section_classes = ['toc-book-title',]
-    chapter_classes = ['toc-entry', 'toc', 'toc_t']
-
-    section_elements = root.xpath(f'//p[{class_query(section_classes)}]')
+    section_elements = root.xpath(f'//p[{query('class', SECTION_CLASSES)}]')
     sections_text = [s.text_content() for s in section_elements]
 
-    chapter_elements = root.xpath(f'//p[{class_query(chapter_classes)}]')
+    chapter_elements = root.xpath(f'//p[{query('class', CHAPTER_CLASSES)}]')
     grouped_chapters: dict[str, list[Chapter]] = defaultdict(lambda: [])
     for el in chapter_elements:
         title = el.text_content()
@@ -97,6 +98,31 @@ def get_sections_and_chapters(book):
         grouped_chapters[path].append(Chapter(path, parts[1], title))
 
     return grouped_chapters
+
+def get_chapters_text(grouped_chapters):
+    chapters_text = {}
+    for path, chapters in grouped_chapters.items():
+        chapter_text = []
+        root = get_tree_from_epub_path(book, path)
+        link_nodes = root.xpath(f'//*[{query('id', [chapter.anchor for chapter in chapters])}]')
+        current_text = ''
+        current_link_node: html.HtmlElement = None
+        for node in root.iter():
+            if node in link_nodes:
+                current_link_node = node
+                if len(current_text) > 0:
+                    chapter_text.append(unicodedata.normalize('NFKD', current_text))
+                    current_text = ''
+            if current_link_node is not None and (node.tag == 'p' or node.getparent().tag == 'p'):
+                if node.text:
+                    current_text += node.text
+                if node.tail:
+                    current_text += node.tail
+        if len(current_text) > 0:
+            chapter_text.append(unicodedata.normalize('NFKD', current_text))
+        assert len(chapter_text) == len(chapters)
+        chapters_text[path] = chapter_text
+    return chapters_text
 
 def get_chunks(text, prompt=SUMMARY_PROMPT):
     enc = tiktoken.encoding_for_model(MODEL)
@@ -228,34 +254,7 @@ if __name__ == '__main__':
     book = epub.read_epub(f'{title}.epub')
 
     grouped_chapters = get_sections_and_chapters(book)
-
-    chapters_text = []
-    for path, chapters in grouped_chapters.items():
-        root = get_tree_from_epub_path(book, path)
-        for i, chapter in enumerate(chapters):
-            links = root.xpath(f'//*[@id="{chapter.anchor}"]')
-            assert len(links) == 1
-            link = links[0]
-            if i == len(chapters) - 1:
-                chapters_text.append(
-                    unicodedata.normalize('NFKD',''.join(link.getparent().itertext()))
-                )
-
-    # Get xhtml paths and anchor ids for each matches
-    # For sections just get the text from the TOC
-    # For chapters, for each consecutive two chapter nodes, if they are in the same xhtml path
-    # get the parent of the first with getparent(), then get the first anchor node index with .index()
-    # start = r.xpath('//*[@id="_idTextAnchor102"]')[0]
-    # end = ...
-    # startp = start.getparent()
-    # starti = startp.index(start)
-    # try: endi = startp.index(end)
-    # [next(start.itertext()) for _ in range()]
-
-    # text = unicodedata.normalize('NFKD', ''.join(root.find('body').itertext()))
-
-    # chapter_files = [s for s in l if 'Chapter' in s or 'Introduction' in s]
-    # chapters = [parse(book, file) for file in chapter_files]
+    chapters_text = get_chapters_text(grouped_chapters)
 
     # chapter_chunks = [get_chunks(chap[1]) for chap in chapters]
     # client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
