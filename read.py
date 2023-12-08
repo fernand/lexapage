@@ -7,6 +7,7 @@ import os
 from pathlib import PurePosixPath
 import pickle
 import time
+from typing import Optional
 import unicodedata
 
 # TODO: Remove this crappy ebook library
@@ -49,6 +50,11 @@ def get_html_head(title):
 """
 
 @dataclass(frozen=True)
+class Section:
+    path: str
+    name: str
+
+@dataclass(frozen=True)
 class Chapter:
     path: str
     anchor: str
@@ -69,8 +75,8 @@ def get_tree_from_epub_path(book, path):
 SECTION_CLASSES = ['toc-book-title',]
 CHAPTER_CLASSES = ['toc-entry', 'toc', 'toc_t']
 
-# TODO: Also return the sections and ensure that sub sections and chapters are nested.
-def get_sections_and_chapters(book):
+# Not supporting nested sections.
+def get_sections_and_chapters(book) -> list[tuple[Optional[Section], list[Chapter]]]:
     l = [i.get_name() for i in book.get_items() if i.get_type() == ebooklib.ITEM_DOCUMENT]
     contents_path = None
     for path in l:
@@ -80,49 +86,64 @@ def get_sections_and_chapters(book):
     assert contents_path is not None
     root: html.HtmlElement = get_tree_from_epub_path(book, str(contents_path))
 
-    section_elements = root.xpath(f'//p[{query('class', SECTION_CLASSES)}]')
-    sections_text = [s.text_content() for s in section_elements]
+    section_elements = set(root.xpath(f'//p[{query('class', SECTION_CLASSES)}]'))
+    chapter_elements = set(root.xpath(f'//p[{query('class', CHAPTER_CLASSES)}]'))
 
-    chapter_elements = root.xpath(f'//p[{query('class', CHAPTER_CLASSES)}]')
-    grouped_chapters: dict[str, list[Chapter]] = defaultdict(lambda: [])
-    for el in chapter_elements:
-        title = el.text_content()
-        link_matches = list(el.iterlinks())
-        assert len(link_matches) == 1
-        link = link_matches[0][2]
-        parts = link.split('#')
-        path = str(contents_path.parent / PurePosixPath(parts[0]))
-        assert len(parts) == 2
-        if 'bibliography' in parts[0].lower() or 'index' in parts[0].lower():
-            continue
-        grouped_chapters[path].append(Chapter(path, parts[1], title))
+    section_chapters: list
+    section_chapters: list[tuple[Optional[Section], list[Chapter]]] = []
+    current_section = None
+    current_chapters = []
+    # TODO: If there is a conclusion at the end with no parent section, it will get added
+    # to the last section instead of an empty section.
+    for el in root.iter():
+        if el in section_elements or el in chapter_elements:
+            title = ' '.join(el.itertext())
+            link_matches = list(el.iterlinks())
+            assert len(link_matches) == 1
+            link = link_matches[0][2]
+            parts = link.split('#')
+            path = str(contents_path.parent / PurePosixPath(parts[0]))
+            assert len(parts) == 2
+            if 'bibliography' in parts[0].lower() or 'index' in parts[0].lower():
+                continue
+            if el in section_elements:
+                if len(current_chapters) > 0:
+                    section_chapters.append((current_section, current_chapters))
+                current_chapters = []
+                current_section = Section(path, title)
+            elif el in chapter_elements:
+                chapter = Chapter(path, parts[1], title)
+                if current_section is None:
+                    section_chapters.append((None, [chapter]))
+                else:
+                    current_chapters.append(chapter)
+    if len(current_chapters) > 0:
+        section_chapters.append((current_section, current_chapters))
+    return section_chapters
 
-    return grouped_chapters
-
-def get_chapters_text(grouped_chapters):
-    chapters_text = {}
-    for path, chapters in grouped_chapters.items():
-        chapter_text = []
-        root = get_tree_from_epub_path(book, path)
-        link_nodes = root.xpath(f'//*[{query('id', [chapter.anchor for chapter in chapters])}]')
+def get_chapters_text(section_chapters) -> dict[Chapter, str]:
+    chapter_text: dict[Chapter, str] = {}
+    for section, chapters in section_chapters:
+        root = get_tree_from_epub_path(book, chapters[0].path)
+        link_nodes = set(root.xpath(f'//*[{query('id', [chapter.anchor for chapter in chapters])}]'))
         current_text = ''
         current_link_node: html.HtmlElement = None
+        chapter_idx = 0
         for node in root.iter():
             if node in link_nodes:
                 current_link_node = node
                 if len(current_text) > 0:
-                    chapter_text.append(unicodedata.normalize('NFKD', current_text))
+                    chapter_text[chapters[chapter_idx]] = unicodedata.normalize('NFKD', current_text)
                     current_text = ''
+                    chapter_idx += 1
             if current_link_node is not None and (node.tag == 'p' or node.getparent().tag == 'p'):
                 if node.text:
                     current_text += node.text
                 if node.tail:
                     current_text += node.tail
-        if len(current_text) > 0:
-            chapter_text.append(unicodedata.normalize('NFKD', current_text))
-        assert len(chapter_text) == len(chapters)
-        chapters_text[path] = chapter_text
-    return chapters_text
+        assert len(current_text) > 0
+        chapter_text[chapters[chapter_idx]] = unicodedata.normalize('NFKD', current_text)
+    return chapter_text
 
 def get_chunks(text, prompt=SUMMARY_PROMPT):
     enc = tiktoken.encoding_for_model(MODEL)
@@ -253,8 +274,8 @@ if __name__ == '__main__':
     # title = 'Conflict'
     book = epub.read_epub(f'{title}.epub')
 
-    grouped_chapters = get_sections_and_chapters(book)
-    chapters_text = get_chapters_text(grouped_chapters)
+    section_chapters = get_sections_and_chapters(book)
+    chapter_text = get_chapters_text(section_chapters)
 
     # chapter_chunks = [get_chunks(chap[1]) for chap in chapters]
     # client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
