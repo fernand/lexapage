@@ -20,6 +20,25 @@ MAX_RESPONSE_LEN_TOKENS = 1024
 
 SUMMARY_PROMPT = """Summarize the text below in up to 300 words and directly use the text's voice. Do NOT use phrases like "This text discusses". Do not make the summary too long, no more than about 300 words."""
 
+def openhermes_summary_prompt(text):
+    return f"""<|im_start|>user
+{SUMMARY_PROMPT}\n\n{text}\n\nSummary:<|im_end|>
+<|im_start|>assistant
+"""
+
+def starling_summary_prompt(text):
+    return f"""GPT4 Correct User: {SUMMARY_PROMPT}\n\n{text}\n\nSummary:<|end_of_turn|>GPT4 Correct Assistant:"""
+
+MODEL = 'teknium/OpenHermes-2.5-Mistral-7B'
+# MODEL = 'berkeley-nest/Starling-LM-7B-alpha'
+
+def summary_prompt(text):
+    model = MODEL.lower()
+    if 'hermes' in model:
+        return openhermes_summary_prompt(text)
+    elif 'starling' in model:
+        return starling_summary_prompt(text)
+
 def toc_prompt(toc_html):
     return f"""Given the EPUB table of contents XML file, output the HTML 'p' tag class names corresponding to sections or subsections and separately output the 'p' tag class names for the actual chapters. You should output the two results as Python lists, and not output anything else.
 
@@ -149,9 +168,9 @@ def get_chapters_text(book, section_chapters) -> dict[Chapter, str]:
         chapter_text[chapters[chapter_idx]] = unicodedata.normalize('NFKD', current_text)
     return chapter_text
 
-def get_chunks(text, prompt=SUMMARY_PROMPT):
+def get_chunks(text):
     enc = sentencepiece.SentencePieceProcessor(model_file='tokenizer.model')
-    prompt_len = len(enc.encode(prompt))
+    prompt_len = len(enc.encode(summary_prompt('')))
     chunks = []
     current_chunk = ''
     paragraphs = text.split('\n')
@@ -174,20 +193,15 @@ def get_chunks(text, prompt=SUMMARY_PROMPT):
     chunks.append(current_chunk.strip())
     return chunks
 
-def merge(prompt, chunk):
-    return prompt + '\n\n' + chunk
-
 def write_summaries(title, chapter_chunks: dict[Chapter, list[str]]):
-    # llm = LLM(model='teknium/OpenHermes-2.5-Mistral-7B', dtype='bfloat16')
-    # llm = LLM(model='berkeley-nest/Starling-LM-7B-alpha', dtype='bfloat16')
-    llm = LLM(model='HuggingFaceH4/zephyr-7b-beta', dtype='bfloat16')
+    llm = LLM(model=MODEL, dtype='bfloat16')
     sampling_params = SamplingParams(max_tokens=MAX_RESPONSE_LEN_TOKENS, temperature=0.8, top_p=1.0)
     enc = sentencepiece.SentencePieceProcessor(model_file='tokenizer.model')
 
     to_process = []
     for chapter, chunks in chapter_chunks.items():
         for chunk_idx, chunk in enumerate(chunks):
-            prompt = merge(SUMMARY_PROMPT, chunk)
+            prompt = summary_prompt(chunk)
             assert len(enc.encode(prompt)) < 4096
             to_process.append((chapter, chunk_idx, prompt))
     t1 = time.perf_counter()
