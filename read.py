@@ -1,5 +1,4 @@
 import codecs
-from collections import defaultdict
 import concurrent.futures
 from dataclasses import dataclass
 import json
@@ -187,7 +186,7 @@ def get_completion(client, prompt):
     )
     return result.choices[0].message.content
 
-def write_summaries(client, chapter_chunks):
+def write_summaries(client, title, chapter_chunks: dict[Chapter, list[str]]):
     def map_fn(bundle):
         chapter_idx, chunk_idx, chunk = bundle
         return (chapter_idx, chunk_idx, get_completion(client, merge(SUMMARY_PROMPT, chunk)))
@@ -196,16 +195,16 @@ def write_summaries(client, chapter_chunks):
     enc = tiktoken.encoding_for_model(MODEL)
     current_group = []
     current_len = 0
-    for chapter_idx, chunks in enumerate(chapter_chunks):
+    for chapter, chunks in chapter_chunks.items():
         for chunk_idx, chunk in enumerate(chunks):
             additional_len = len(enc.encode(chunk)) + MAX_RESPONSE_LEN_TOKENS
             current_len += additional_len
             if current_len >= 40000:
                 to_process.append(current_group)
-                current_group = [(chapter_idx, chunk_idx, chunk)]
+                current_group = [(chapter, chunk_idx, chunk)]
                 current_len = additional_len
             else:
-                current_group.append((chapter_idx, chunk_idx, chunk))
+                current_group.append((chapter, chunk_idx, chunk))
     to_process.append(current_group)
 
     results = []
@@ -214,15 +213,15 @@ def write_summaries(client, chapter_chunks):
             results.extend(executor.map(map_fn, group))
         time.sleep(60)
 
-    chapter_summaries = [[] for _ in range(len(chapter_chunks))]
-    for chapter_idx, chunk_idx, summary in results:
-        assert len(chapter_summaries[chapter_idx]) == chunk_idx
-        chapter_summaries[chapter_idx].append(summary)
+    chapter_summaries = {chapter: [] for chapter in chapter_chunks}
+    for chapter, chunk_idx, summary in results:
+        assert len(chapter_summaries[chapter]) == chunk_idx
+        chapter_summaries[chapter].append(summary)
 
-    with open('summaries.pkl', 'wb') as f:
+    with open(f'{title}_summaries.pkl', 'wb') as f:
         pickle.dump(chapter_summaries, f)
 
-def write_embeddings(client, chapter_chunks):
+def write_embeddings(client, title, chapter_chunks: dict[Chapter, list[str]]):
     def map_fn(bundle):
         chapter_idx, chunk_idx, chunk = bundle
         paragraphs = chunk.lstrip().rstrip().split('\n')
@@ -231,21 +230,21 @@ def write_embeddings(client, chapter_chunks):
         return (chapter_idx, chunk_idx, embs)
 
     to_process = []
-    for chapter_idx, chunks in enumerate(chapter_chunks):
+    for chapter, chunks in chapter_chunks.items():
         for chunk_idx, chunk in enumerate(chunks):
-            to_process.append((chapter_idx, chunk_idx, chunk))
+            to_process.append((chapter, chunk_idx, chunk))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(to_process)) as executor:
         results = executor.map(map_fn, to_process)
 
     all_embs = {}
-    for chapter_idx, chunk_idx, embs in results:
-        all_embs[f'{chapter_idx},{chunk_idx}'] = embs
+    for chapter, chunk_idx, embs in results:
+        all_embs[f'{chapter.anchor},{chunk_idx}'] = embs
 
-    with open('embs.pkl', 'wb') as f:
+    with open(f'{title}_embs.pkl', 'wb') as f:
         pickle.dump(all_embs, f)
 
-    with open('site/embs.json', 'w') as f:
+    with open(f'site/{title}_embs.json', 'w') as f:
         json.dump(all_embs, f)
 
 def write_html(title, fname: str, chapters: list[tuple[str, str]], chapter_chunks: list[list[str]], chapter_summaries: list[list[str]]):
@@ -270,21 +269,21 @@ def write_html(title, fname: str, chapters: list[tuple[str, str]], chapter_chunk
     f.close()
 
 if __name__ == '__main__':
-    title = 'Ancient_City'
-    # title = 'Conflict'
+    # title = 'Ancient_City'
+    title = 'Conflict'
     book = epub.read_epub(f'{title}.epub')
 
     section_chapters = get_sections_and_chapters(book)
     chapter_text = get_chapters_text(section_chapters)
 
-    # chapter_chunks = [get_chunks(chap[1]) for chap in chapters]
-    # client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
-    # write_summaries(client, chapter_chunks)
-    # write_embeddings(client, chapter_chunks)
+    chapter_chunks: dict[Chapter, list[str]] = {
+        chapter: get_chunks(text) for chapter, text in chapter_text.items()
+    }
+    client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
+    # write_summaries(client, title, chapter_chunks)
+    write_embeddings(client, title, chapter_chunks)
 
-    # with open('summaries.pkl', 'rb') as f:
+    # with open(f'{title}_summaries.pkl', 'rb') as f:
     #     chapter_summaries = pickle.load(f)
-    # with open('embs.pkl', 'rb') as f:
-    #     embs = pickle.load(f)
 
     # write_html(title, f'site/{title.lower()}.html', chapters, chapter_chunks, chapter_summaries)
