@@ -18,7 +18,7 @@ from vllm import LLM, SamplingParams
 
 MAX_RESPONSE_LEN_TOKENS = 1024
 
-SUMMARY_PROMPT = """Summarize the text below in a paragraph's length and directly use the text's voice. Do NOT use phrases like "This text discusses". This is VERY important."""
+SUMMARY_PROMPT = """Summarize the text below in up to 300 words and directly use the text's voice. Do NOT use phrases like "This text discusses". Do not make the summary too long, no more than about 300 words."""
 
 def toc_prompt(toc_html):
     return f"""Given the EPUB table of contents XML file, output the HTML 'p' tag class names corresponding to sections or subsections and separately output the 'p' tag class names for the actual chapters. You should output the two results as Python lists, and not output anything else.
@@ -179,7 +179,8 @@ def merge(prompt, chunk):
 
 def write_summaries(title, chapter_chunks: dict[Chapter, list[str]]):
     # llm = LLM(model='teknium/OpenHermes-2.5-Mistral-7B', dtype='bfloat16')
-    llm = LLM(model='berkeley-nest/Starling-LM-7B-alpha', dtype='bfloat16')
+    # llm = LLM(model='berkeley-nest/Starling-LM-7B-alpha', dtype='bfloat16')
+    llm = LLM(model='HuggingFaceH4/zephyr-7b-beta', dtype='bfloat16')
     sampling_params = SamplingParams(max_tokens=MAX_RESPONSE_LEN_TOKENS, temperature=0.8, top_p=1.0)
     enc = sentencepiece.SentencePieceProcessor(model_file='tokenizer.model')
 
