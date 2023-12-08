@@ -69,12 +69,11 @@ def query(attribute, values):
 
 def get_tree_from_epub_path(book, path):
     epub_html = book.get_item_with_href(path)
-    # TODO: Look into encoding.
     utf8_parser = html.HTMLParser(encoding='utf-8')
     return html.document_fromstring(epub_html.content, parser=utf8_parser)
 
 SECTION_CLASSES = ['toc-book-title',]
-CHAPTER_CLASSES = ['toc-entry', 'toc', 'toc_t']
+CHAPTER_CLASSES = ['toc-entry', 'toc', 'toc_t', 'toc_b']
 
 # Not supporting nested sections.
 def get_sections_and_chapters(book) -> list[tuple[Optional[Section], list[Chapter]]]:
@@ -283,8 +282,8 @@ def write_html(
     f.close()
 
 if __name__ == '__main__':
-    # title = 'Ancient_City'
-    title = 'Conflict'
+    title = 'Ancient_City'
+    # title = 'Conflict'
     book = epub.read_epub(f'{title}.epub')
 
     section_chapters = get_sections_and_chapters(book)
