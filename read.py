@@ -83,8 +83,8 @@ def get_tree_from_epub_path(book, path):
     utf8_parser = html.HTMLParser(encoding='utf-8')
     return html.document_fromstring(epub_html.content, parser=utf8_parser)
 
-SECTION_CLASSES = ['toc-book-title',]
-CHAPTER_CLASSES = ['toc-entry', 'toc', 'toc_t', 'toc_b']
+SECTION_CLASSES = ['toc-book-title', 'CCT']
+CHAPTER_CLASSES = ['toc-entry', 'toc', 'toc_t', 'toc_b', 'CFMH', 'CCTF', 'CH1', 'CCTF', 'CBMH']
 
 # Not supporting nested sections.
 def get_sections_and_chapters(book) -> list[tuple[Optional[Section], list[Chapter]]]:
@@ -105,31 +105,37 @@ def get_sections_and_chapters(book) -> list[tuple[Optional[Section], list[Chapte
     current_section = None
     current_chapters = []
     curr_chapter_id = 0
+    to_ignore = set(['notes', 'index', 'bibliography', 'aknowledgments'])
     # TODO: If there is a conclusion at the end with no parent section, it will get added
     # to the last section instead of an empty section.
     for el in root.iter():
         if el in section_elements or el in chapter_elements:
-            title = ' '.join(el.itertext())
-            link_matches = list(el.iterlinks())
-            assert len(link_matches) == 1
-            link = link_matches[0][2]
-            parts = link.split('#')
-            path = str(contents_path.parent / PurePosixPath(parts[0]))
-            assert len(parts) == 2
-            if 'bibliography' in parts[0].lower() or 'index' in parts[0].lower():
-                continue
-            if el in section_elements:
-                if len(current_chapters) > 0:
-                    section_chapters.append((current_section, current_chapters))
-                current_chapters = []
-                current_section = Section(path, title)
-            elif el in chapter_elements:
-                chapter = Chapter(path, parts[1], title, curr_chapter_id)
-                if current_section is None:
-                    section_chapters.append((None, [chapter]))
-                else:
-                    current_chapters.append(chapter)
-                curr_chapter_id += 1
+            for link_match in el.iterlinks():
+                title = unicodedata.normalize('NFKD', ' '.join(link_match[0].itertext()))
+                link = link_match[2]
+                parts = link.split('#')
+                local_path = parts[0]
+                path = str(contents_path.parent / PurePosixPath(local_path))
+                if any([s in local_path.lower() for s in to_ignore]):
+                    continue
+                if el in section_elements:
+                    if len(current_chapters) > 0:
+                        section_chapters.append((current_section, current_chapters))
+                    current_chapters = []
+                    current_section = Section(path, title)
+                elif el in chapter_elements:
+                    if len(parts) == 1:
+                        anchor = None
+                    elif len(parts) == 2:
+                        anchor = parts[1]
+                    else:
+                        assert False
+                    chapter = Chapter(path, anchor, title, curr_chapter_id)
+                    if current_section is None:
+                        section_chapters.append((None, [chapter]))
+                    else:
+                        current_chapters.append(chapter)
+                    curr_chapter_id += 1
     if len(current_chapters) > 0:
         section_chapters.append((current_section, current_chapters))
     return section_chapters
@@ -273,8 +279,7 @@ def write_html(
     f.close()
 
 if __name__ == '__main__':
-    title = 'Ancient_City'
-    # title = 'Conflict'
+    title = 'Roman'
     book = epub.read_epub(f'{title}.epub')
     title = f'{title.lower()}_hermes'
 
