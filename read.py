@@ -12,16 +12,28 @@ import unicodedata
 # TODO: Remove this crappy ebook library
 import ebooklib
 from ebooklib import epub
-import tiktoken
 from lxml import etree, html
-# TODO: Remove
-from openai import OpenAI
+import sentencepiece
+import urllib3
+from vllm import LLM, SamplingParams
 
-MODEL = 'gpt-3.5-turbo'
 MAX_RESPONSE_LEN_TOKENS = 1024
+MODEL = 'teknium/OpenHermes-2.5-Mistral-7B'
 
-SYSTEM_PROMPT = "You help summarize nonfiction books effectively."
-SUMMARY_PROMPT = """Summarize the text below in a paragraph's length and directly use the text's voice. Do NOT use phrases like "This text discusses". This is VERY important."""
+SUMMARY_PROMPT = """Summarize the text below in up to 300 words and directly use the text's voice. Do NOT use phrases like "This text discusses". Do not make the summary too long, no more than about 300 words."""
+
+def openhermes_summary_prompt(text):
+    return f"""<|im_start|>user
+{SUMMARY_PROMPT}\n\n{text}\n\nSummary:<|im_end|>
+<|im_start|>assistant
+"""
+
+def summary_prompt(text):
+    model = MODEL.lower()
+    if 'hermes' in model:
+        return openhermes_summary_prompt(text)
+    else:
+        assert False
 
 def toc_prompt(toc_html):
     return f"""Given the EPUB table of contents XML file, output the HTML 'p' tag class names corresponding to sections or subsections and separately output the 'p' tag class names for the actual chapters. You should output the two results as Python lists, and not output anything else.
@@ -85,8 +97,8 @@ def get_sections_and_chapters(book) -> list[tuple[Optional[Section], list[Chapte
     assert contents_path is not None
     root: html.HtmlElement = get_tree_from_epub_path(book, str(contents_path))
 
-    section_elements = set(root.xpath(f'//p[{query('class', SECTION_CLASSES)}]'))
-    chapter_elements = set(root.xpath(f'//p[{query('class', CHAPTER_CLASSES)}]'))
+    section_elements = set(root.xpath(f'//p[{query("class", SECTION_CLASSES)}]'))
+    chapter_elements = set(root.xpath(f'//p[{query("class", CHAPTER_CLASSES)}]'))
 
     section_chapters: list
     section_chapters: list[tuple[Optional[Section], list[Chapter]]] = []
@@ -122,11 +134,11 @@ def get_sections_and_chapters(book) -> list[tuple[Optional[Section], list[Chapte
         section_chapters.append((current_section, current_chapters))
     return section_chapters
 
-def get_chapters_text(section_chapters) -> dict[Chapter, str]:
+def get_chapters_text(book, section_chapters) -> dict[Chapter, str]:
     chapter_text: dict[Chapter, str] = {}
     for section, chapters in section_chapters:
         root = get_tree_from_epub_path(book, chapters[0].path)
-        link_nodes = set(root.xpath(f'//*[{query('id', [chapter.anchor for chapter in chapters])}]'))
+        link_nodes = set(root.xpath(f'//*[{query("id", [chapter.anchor for chapter in chapters])}]'))
         current_text = ''
         current_link_node: html.HtmlElement = None
         chapter_idx = 0
@@ -152,24 +164,23 @@ def get_chapters_text(section_chapters) -> dict[Chapter, str]:
         chapter_text[chapters[chapter_idx]] = unicodedata.normalize('NFKD', current_text)
     return chapter_text
 
-def get_chunks(text, prompt=SUMMARY_PROMPT):
-    enc = tiktoken.encoding_for_model(MODEL)
-    system_prompt_len = len(enc.encode(SYSTEM_PROMPT))
-    prompt_len = len(enc.encode(prompt))
+def get_chunks(text):
+    enc = sentencepiece.SentencePieceProcessor(model_file='tokenizer.model')
+    prompt_len = len(enc.encode(summary_prompt('')))
     chunks = []
     current_chunk = ''
     paragraphs = text.split('\n')
-    current_num_tokens = system_prompt_len + prompt_len + MAX_RESPONSE_LEN_TOKENS
+    current_num_tokens = prompt_len + MAX_RESPONSE_LEN_TOKENS
     for paragraph in paragraphs:
         paragraph = paragraph.lstrip().strip()
         if len(paragraph) < 5:
             continue
         num_tokens = len(enc.encode(paragraph))
-        assert num_tokens + system_prompt_len + prompt_len + MAX_RESPONSE_LEN_TOKENS < 4090
+        assert num_tokens + prompt_len + MAX_RESPONSE_LEN_TOKENS < 4090
         if current_num_tokens + num_tokens > 4090:
             chunks.append(current_chunk)
             current_chunk = paragraph.strip()
-            current_num_tokens = system_prompt_len + prompt_len + num_tokens + MAX_RESPONSE_LEN_TOKENS
+            current_num_tokens = prompt_len + num_tokens + MAX_RESPONSE_LEN_TOKENS
         else:
             current_chunk += paragraph.strip()
             current_num_tokens += num_tokens + 2 # Gotta account for the new line
@@ -178,66 +189,40 @@ def get_chunks(text, prompt=SUMMARY_PROMPT):
     chunks.append(current_chunk.strip())
     return chunks
 
-def merge(prompt, chunk):
-    return prompt + '\n\n' + chunk
-
-def get_completion(client, prompt):
-    result = client.chat.completions.create(
-        model=MODEL,
-        temperature=0.7,
-        top_p=1,
-        max_tokens=MAX_RESPONSE_LEN_TOKENS,
-        messages=[
-            {'role': 'system', 'content': SYSTEM_PROMPT},
-            {'role': 'user', 'content': prompt},
-        ],
-    )
-    return result.choices[0].message.content
-
-def write_summaries(client, title, chapter_chunks: dict[Chapter, list[str]]):
-    def map_fn(bundle):
-        chapter_idx, chunk_idx, chunk = bundle
-        return (chapter_idx, chunk_idx, get_completion(client, merge(SUMMARY_PROMPT, chunk)))
+def write_summaries(title, chapter_chunks: dict[Chapter, list[str]]):
+    llm = LLM(model=MODEL, dtype='bfloat16')
+    sampling_params = SamplingParams(max_tokens=MAX_RESPONSE_LEN_TOKENS, temperature=0.8, top_p=1.0)
+    enc = sentencepiece.SentencePieceProcessor(model_file='tokenizer.model')
 
     to_process = []
-    enc = tiktoken.encoding_for_model(MODEL)
-    system_prompt_len = len(enc.encode(SYSTEM_PROMPT))
-    current_group = []
-    current_len = 0
     for chapter, chunks in chapter_chunks.items():
         for chunk_idx, chunk in enumerate(chunks):
-            # Add a buffer of 10 tokens just in case
-            additional_len = len(enc.encode(merge(SUMMARY_PROMPT, chunk))) + MAX_RESPONSE_LEN_TOKENS + system_prompt_len + 10
-            assert additional_len < 4096
-            current_len += additional_len
-            if current_len >= 60000:
-                to_process.append(current_group)
-                current_group = [(chapter, chunk_idx, chunk)]
-                current_len = additional_len
-            else:
-                current_group.append((chapter, chunk_idx, chunk))
-    to_process.append(current_group)
-
-    results = []
-    for group in to_process:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(group)) as executor:
-            results.extend(executor.map(map_fn, group))
-        time.sleep(61)
+            prompt = summary_prompt(chunk)
+            assert len(enc.encode(prompt)) < 4096
+            to_process.append((chapter, chunk_idx, prompt))
+    t1 = time.perf_counter()
+    results = llm.generate([t[2] for t in to_process], sampling_params)
+    print(f'Time to process: {round(time.perf_counter() - t1, 1)}s')
 
     chapter_summaries = {chapter: [] for chapter in chapter_chunks}
-    for chapter, chunk_idx, summary in results:
-        assert len(chapter_summaries[chapter]) == chunk_idx
-        chapter_summaries[chapter].append(summary)
+    for summary, (chapter, chunk_idx, _) in zip(results, to_process):
+        chapter_summaries[chapter].append(summary.outputs[0].text)
 
     with open(f'{title}_summaries.pkl', 'wb') as f:
         pickle.dump(chapter_summaries, f)
 
-def write_embeddings(client, title, chapter_chunks: dict[Chapter, list[str]]):
+def write_embeddings(title, chapter_chunks: dict[Chapter, list[str]]):
     def map_fn(bundle):
         chapter_idx, chunk_idx, chunk = bundle
         paragraphs = chunk.lstrip().rstrip().split('\n')
-        results = client.embeddings.create(input = paragraphs, model='text-embedding-ada-002')
-        embs = [results.data[i].embedding for i in range(len(results.data))]
+        resp = urllib3.request(
+            'POST',
+            'https://api.openai.com/v1/embeddings',
+            body=json.dumps({'model': 'text-embedding-ada-002', 'input': paragraphs}),
+            headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {os.environ["OPENAI_API_KEY"]}'},
+        )
+        results = resp.json()
+        embs = [results['data'][i]['embedding'] for i in range(len(results['data']))]
         return (chapter_idx, chunk_idx, embs)
 
     to_process = []
@@ -284,25 +269,24 @@ def write_html(
             f.write('</details>\n')
         if section is not None:
             f.write('</details>\n')
-    f.write('</body></html>\n')
+    f.write('</body>\n</html>\n')
     f.close()
 
 if __name__ == '__main__':
     title = 'Ancient_City'
     # title = 'Conflict'
     book = epub.read_epub(f'{title}.epub')
-    title = title.lower()
+    title = f'{title.lower()}_hermes'
 
     section_chapters = get_sections_and_chapters(book)
-    chapter_text = get_chapters_text(section_chapters)
+    chapter_text = get_chapters_text(book, section_chapters)
 
     chapter_chunks: dict[Chapter, list[str]] = {
         chapter: get_chunks(text) for chapter, text in chapter_text.items()
     }
-    client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
-    write_summaries(client, title, chapter_chunks)
-    write_embeddings(client, title, chapter_chunks)
+    write_summaries(title, chapter_chunks)
+    write_embeddings(title, chapter_chunks)
 
     with open(f'{title}_summaries.pkl', 'rb') as f:
         chapter_summaries = pickle.load(f)
-    write_html(title, f'site/{title.lower()}.html', section_chapters, chapter_chunks, chapter_summaries)
+    write_html(title, f'site/{title}.html', section_chapters, chapter_chunks, chapter_summaries)

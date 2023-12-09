@@ -1,3 +1,4 @@
 ebooklib
-openai
-tiktoken
+lxml
+urllib3
+vllm
