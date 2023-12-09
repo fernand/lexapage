@@ -1,2 +1,4 @@
 ebooklib
+lxml
+urllib3
 vllm

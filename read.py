@@ -14,6 +14,7 @@ import ebooklib
 from ebooklib import epub
 from lxml import etree, html
 import sentencepiece
+import urllib3
 from vllm import LLM, SamplingParams
 
 MAX_RESPONSE_LEN_TOKENS = 1024
@@ -188,7 +189,7 @@ def get_chunks(text):
     chunks.append(current_chunk.strip())
     return chunks
 
-def write_summaries(title, suffix, chapter_chunks: dict[Chapter, list[str]]):
+def write_summaries(title, chapter_chunks: dict[Chapter, list[str]]):
     llm = LLM(model=MODEL, dtype='bfloat16')
     sampling_params = SamplingParams(max_tokens=MAX_RESPONSE_LEN_TOKENS, temperature=0.8, top_p=1.0)
     enc = sentencepiece.SentencePieceProcessor(model_file='tokenizer.model')
@@ -207,15 +208,21 @@ def write_summaries(title, suffix, chapter_chunks: dict[Chapter, list[str]]):
     for summary, (chapter, chunk_idx, _) in zip(results, to_process):
         chapter_summaries[chapter].append(summary.outputs[0].text)
 
-    with open(f'{title}_{suffix}_summaries.pkl', 'wb') as f:
+    with open(f'{title}_summaries.pkl', 'wb') as f:
         pickle.dump(chapter_summaries, f)
 
-def write_embeddings(client, title, chapter_chunks: dict[Chapter, list[str]]):
+def write_embeddings(title, chapter_chunks: dict[Chapter, list[str]]):
     def map_fn(bundle):
         chapter_idx, chunk_idx, chunk = bundle
         paragraphs = chunk.lstrip().rstrip().split('\n')
-        results = client.embeddings.create(input = paragraphs, model='text-embedding-ada-002')
-        embs = [results.data[i].embedding for i in range(len(results.data))]
+        resp = urllib3.request(
+            'POST',
+            'https://api.openai.com/v1/embeddings',
+            body=json.dumps({'model': 'text-embedding-ada-002', 'input': paragraphs}),
+            headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {os.environ["OPENAI_API_KEY"]}'},
+        )
+        results = resp.json()
+        embs = [results['data'][i]['embedding'] for i in range(len(results['data']))]
         return (chapter_idx, chunk_idx, embs)
 
     to_process = []
@@ -269,8 +276,7 @@ if __name__ == '__main__':
     title = 'Ancient_City'
     # title = 'Conflict'
     book = epub.read_epub(f'{title}.epub')
-    title = title.lower()
-    suffix = 'hermes'
+    title = f'{title.lower()}_hermes'
 
     section_chapters = get_sections_and_chapters(book)
     chapter_text = get_chapters_text(book, section_chapters)
@@ -278,9 +284,9 @@ if __name__ == '__main__':
     chapter_chunks: dict[Chapter, list[str]] = {
         chapter: get_chunks(text) for chapter, text in chapter_text.items()
     }
-    write_summaries(title, suffix, chapter_chunks)
-    write_embeddings(client, title, chapter_chunks)
+    write_summaries(title, chapter_chunks)
+    write_embeddings(title, chapter_chunks)
 
-    with open(f'{title}_{suffix}_summaries.pkl', 'rb') as f:
+    with open(f'{title}_summaries.pkl', 'rb') as f:
         chapter_summaries = pickle.load(f)
-    write_html(title, f'site/{title.lower()}_{suffix}.html', section_chapters, chapter_chunks, chapter_summaries)
+    write_html(title, f'site/{title}.html', section_chapters, chapter_chunks, chapter_summaries)
