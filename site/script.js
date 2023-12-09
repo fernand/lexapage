@@ -1,12 +1,12 @@
 'use strict';
 
-const bookTitle = 'Conflict';
+const bookTitle = document.title
 const K = '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';
 
 let embs;
-// fetch(`${bookTitle.toLowerCase()}_embs.json`)
-//   .then(response => response.json())
-//   .then(json => embs = json);
+fetch(`${bookTitle.toLowerCase()}_embs.json`)
+  .then(response => response.json())
+  .then(json => embs = json);
 
 async function getEmbedding(text) {
   let response = await fetch('https://api.openai.com/v1/embeddings', {

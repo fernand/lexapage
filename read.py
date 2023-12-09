@@ -29,8 +29,8 @@ def openhermes_summary_prompt(text):
 def starling_summary_prompt(text):
     return f"""GPT4 Correct User: {SUMMARY_PROMPT}\n\n{text}\n\nSummary:<|end_of_turn|>GPT4 Correct Assistant:"""
 
-MODEL = 'teknium/OpenHermes-2.5-Mistral-7B'
-# MODEL = 'berkeley-nest/Starling-LM-7B-alpha'
+# MODEL = 'teknium/OpenHermes-2.5-Mistral-7B'
+MODEL = 'berkeley-nest/Starling-LM-7B-alpha'
 
 def summary_prompt(text):
     model = MODEL.lower()
@@ -193,7 +193,7 @@ def get_chunks(text):
     chunks.append(current_chunk.strip())
     return chunks
 
-def write_summaries(title, chapter_chunks: dict[Chapter, list[str]]):
+def write_summaries(title, suffix, chapter_chunks: dict[Chapter, list[str]]):
     llm = LLM(model=MODEL, dtype='bfloat16')
     sampling_params = SamplingParams(max_tokens=MAX_RESPONSE_LEN_TOKENS, temperature=0.8, top_p=1.0)
     enc = sentencepiece.SentencePieceProcessor(model_file='tokenizer.model')
@@ -212,7 +212,7 @@ def write_summaries(title, chapter_chunks: dict[Chapter, list[str]]):
     for summary, (chapter, chunk_idx, _) in zip(results, to_process):
         chapter_summaries[chapter].append(summary.outputs[0].text)
 
-    with open(f'{title}_summaries.pkl', 'wb') as f:
+    with open(f'{title}_{suffix}_summaries.pkl', 'wb') as f:
         pickle.dump(chapter_summaries, f)
 
 def write_embeddings(client, title, chapter_chunks: dict[Chapter, list[str]]):
@@ -275,6 +275,12 @@ if __name__ == '__main__':
     title = 'Conflict'
     book = epub.read_epub(f'{title}.epub')
     title = title.lower()
+    if 'hermes' in MODEL.lower():
+        suffix = 'hermes'
+    elif 'starling' in MODEL.lower():
+        suffix = 'starling'
+    else:
+        assert False
 
     section_chapters = get_sections_and_chapters(book)
     chapter_text = get_chapters_text(book, section_chapters)
@@ -282,9 +288,9 @@ if __name__ == '__main__':
     chapter_chunks: dict[Chapter, list[str]] = {
         chapter: get_chunks(text) for chapter, text in chapter_text.items()
     }
-    write_summaries(title, chapter_chunks)
+    write_summaries(title, suffix, chapter_chunks)
     # write_embeddings(client, title, chapter_chunks)
 
-    with open(f'{title}_summaries.pkl', 'rb') as f:
+    with open(f'{title}_{suffix}_summaries.pkl', 'rb') as f:
         chapter_summaries = pickle.load(f)
-    write_html(title, f'site/{title.lower()}.html', section_chapters, chapter_chunks, chapter_summaries)
+    write_html(title, f'site/{title.lower()}_{suffix}.html', section_chapters, chapter_chunks, chapter_summaries)
