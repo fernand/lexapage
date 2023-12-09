@@ -17,6 +17,7 @@ import sentencepiece
 from vllm import LLM, SamplingParams
 
 MAX_RESPONSE_LEN_TOKENS = 1024
+MODEL = 'teknium/OpenHermes-2.5-Mistral-7B'
 
 SUMMARY_PROMPT = """Summarize the text below in up to 300 words and directly use the text's voice. Do NOT use phrases like "This text discusses". Do not make the summary too long, no more than about 300 words."""
 
@@ -26,18 +27,12 @@ def openhermes_summary_prompt(text):
 <|im_start|>assistant
 """
 
-def starling_summary_prompt(text):
-    return f"""GPT4 Correct User: {SUMMARY_PROMPT}\n\n{text}\n\nSummary:<|end_of_turn|>GPT4 Correct Assistant:"""
-
-# MODEL = 'teknium/OpenHermes-2.5-Mistral-7B'
-MODEL = 'berkeley-nest/Starling-LM-7B-alpha'
-
 def summary_prompt(text):
     model = MODEL.lower()
     if 'hermes' in model:
         return openhermes_summary_prompt(text)
-    elif 'starling' in model:
-        return starling_summary_prompt(text)
+    else:
+        assert False
 
 def toc_prompt(toc_html):
     return f"""Given the EPUB table of contents XML file, output the HTML 'p' tag class names corresponding to sections or subsections and separately output the 'p' tag class names for the actual chapters. You should output the two results as Python lists, and not output anything else.
@@ -271,16 +266,11 @@ def write_html(
     f.close()
 
 if __name__ == '__main__':
-    # title = 'Ancient_City'
-    title = 'Conflict'
+    title = 'Ancient_City'
+    # title = 'Conflict'
     book = epub.read_epub(f'{title}.epub')
     title = title.lower()
-    if 'hermes' in MODEL.lower():
-        suffix = 'hermes'
-    elif 'starling' in MODEL.lower():
-        suffix = 'starling'
-    else:
-        assert False
+    suffix = 'hermes'
 
     section_chapters = get_sections_and_chapters(book)
     chapter_text = get_chapters_text(book, section_chapters)
@@ -289,7 +279,7 @@ if __name__ == '__main__':
         chapter: get_chunks(text) for chapter, text in chapter_text.items()
     }
     write_summaries(title, suffix, chapter_chunks)
-    # write_embeddings(client, title, chapter_chunks)
+    write_embeddings(client, title, chapter_chunks)
 
     with open(f'{title}_{suffix}_summaries.pkl', 'rb') as f:
         chapter_summaries = pickle.load(f)
