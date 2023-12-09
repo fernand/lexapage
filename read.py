@@ -67,7 +67,7 @@ class Section:
 @dataclass(frozen=True)
 class Chapter:
     path: str
-    anchor: str
+    anchor: Optional[str]
     name: str
     # Monotonically increasing number. For embeddings.
     id: int
@@ -100,14 +100,11 @@ def get_sections_and_chapters(book) -> list[tuple[Optional[Section], list[Chapte
     section_elements = set(root.xpath(f'//p[{query("class", SECTION_CLASSES)}]'))
     chapter_elements = set(root.xpath(f'//p[{query("class", CHAPTER_CLASSES)}]'))
 
-    section_chapters: list
     section_chapters: list[tuple[Optional[Section], list[Chapter]]] = []
     current_section = None
     current_chapters = []
     curr_chapter_id = 0
     to_ignore = set(['notes', 'index', 'bibliography', 'aknowledgments'])
-    # TODO: If there is a conclusion at the end with no parent section, it will get added
-    # to the last section instead of an empty section.
     for el in root.iter():
         if el in section_elements or el in chapter_elements:
             for link_match in el.iterlinks():
@@ -131,7 +128,11 @@ def get_sections_and_chapters(book) -> list[tuple[Optional[Section], list[Chapte
                     else:
                         assert False
                     chapter = Chapter(path, anchor, title, curr_chapter_id)
-                    if current_section is None:
+                    if current_section is None or path != current_section.path:
+                        if len(current_chapters) > 0:
+                            section_chapters.append((current_section, current_chapters))
+                            current_chapters = []
+                        current_section = None
                         section_chapters.append((None, [chapter]))
                     else:
                         current_chapters.append(chapter)
@@ -144,7 +145,12 @@ def get_chapters_text(book, section_chapters) -> dict[Chapter, str]:
     chapter_text: dict[Chapter, str] = {}
     for section, chapters in section_chapters:
         root = get_tree_from_epub_path(book, chapters[0].path)
-        link_nodes = set(root.xpath(f'//*[{query("id", [chapter.anchor for chapter in chapters])}]'))
+        anchors = [chapter.anchor for chapter in chapters if chapter.anchor is not None]
+        if len(anchors) > 0:
+            link_nodes = set(root.xpath(f'//*[{query("id", anchors)}]'))
+        else:
+            # If we don't have any anchors, then the whole file is the chapter.
+            link_nodes = set([root])
         current_text = ''
         current_link_node: html.HtmlElement = None
         chapter_idx = 0
@@ -157,7 +163,7 @@ def get_chapters_text(book, section_chapters) -> dict[Chapter, str]:
                     current_text = ''
                     chapter_idx += 1
             is_p = node.tag == 'p'
-            if current_link_node is not None and (is_p or node.getparent().tag == 'p'):
+            if current_link_node is not None and (is_p or (node.getparent() is not None and node.getparent().tag == 'p')):
                 if (is_p and node != current_p) or (not is_p and node.getparent() != current_p):
                     current_text += '\n'
                 if node.tag == 'p':
@@ -214,7 +220,7 @@ def write_summaries(title, chapter_chunks: dict[Chapter, list[str]]):
     for summary, (chapter, chunk_idx, _) in zip(results, to_process):
         chapter_summaries[chapter].append(summary.outputs[0].text)
 
-    with open(f'{title}_summaries.pkl', 'wb') as f:
+    with open(f'{title.lower()}_summaries.pkl', 'wb') as f:
         pickle.dump(chapter_summaries, f)
 
 def write_embeddings(title, chapter_chunks: dict[Chapter, list[str]]):
@@ -243,10 +249,7 @@ def write_embeddings(title, chapter_chunks: dict[Chapter, list[str]]):
     for chapter, chunk_idx, embs in results:
         all_embs[f'{chapter.id},{chunk_idx}'] = embs
 
-    with open(f'{title}_embs.pkl', 'wb') as f:
-        pickle.dump(all_embs, f)
-
-    with open(f'site/{title}_embs.json', 'w') as f:
+    with open(f'site/{title.lower()}_embs.json', 'w') as f:
         json.dump(all_embs, f)
 
 def write_html(
@@ -279,9 +282,12 @@ def write_html(
     f.close()
 
 if __name__ == '__main__':
-    title = 'Roman'
+    title = [
+        'Conflict',
+        'Ancient_City',
+        'Roman',
+    ][-1]
     book = epub.read_epub(f'{title}.epub')
-    title = f'{title.lower()}_hermes'
 
     section_chapters = get_sections_and_chapters(book)
     chapter_text = get_chapters_text(book, section_chapters)
@@ -292,6 +298,6 @@ if __name__ == '__main__':
     write_summaries(title, chapter_chunks)
     write_embeddings(title, chapter_chunks)
 
-    with open(f'{title}_summaries.pkl', 'rb') as f:
+    with open(f'{title.lower()}_summaries.pkl', 'rb') as f:
         chapter_summaries = pickle.load(f)
-    write_html(title, f'site/{title}.html', section_chapters, chapter_chunks, chapter_summaries)
+    write_html(title, f'site/{title.lower()}.html', section_chapters, chapter_chunks, chapter_summaries)
