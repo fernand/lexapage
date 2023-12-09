@@ -267,7 +267,7 @@ def write_html(
             f.write('</details>\n')
         if section is not None:
             f.write('</details>\n')
-    f.write('</body></html>\n')
+    f.write('</body>\n</html>\n')
     f.close()
 
 if __name__ == '__main__':
