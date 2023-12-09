@@ -4,7 +4,7 @@ const bookTitle = document.title
 const K = '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';
 
 let embs;
-fetch(`${bookTitle}_embs.json`)
+fetch(`${bookTitle.toLowerCase()}_embs.json`)
   .then(response => response.json())
   .then(json => embs = json);
 
