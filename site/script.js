@@ -3,6 +3,19 @@
 const bookTitle = document.title
 const K = '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';
 
+function getMobileOS() {
+    var userAgent = navigator.userAgent || navigator.vendor || window.opera;
+    if (/android/i.test(userAgent)) {
+        return 'Android';
+    }
+    if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
+        return 'iOS';
+    }
+    return 'unknown';
+}
+
+const isMobile = getMobileOS() !== 'unknown';
+
 let embs;
 fetch(`${bookTitle.toLowerCase()}_embs.json`)
     .then(response => response.json())
@@ -51,7 +64,11 @@ function showButton() {
         let range = window.getSelection().getRangeAt(0);
         let rect = range.getBoundingClientRect();
         goToButton.style.display = 'block';
-        let absTopPos = rect.top + window.scrollY - goToButton.offsetHeight;
+        let absTopPos;
+        if (isMobile)
+            absTopPos = rect.bottom + window.scrollY;
+        else
+            absTopPos = rect.top + window.scrollY - goToButton.offsetHeight;
         let absLeftPos = rect.left + window.scrollX + (rect.width - goToButton.offsetWidth);
         goToButton.style.top = absTopPos + 'px';
         goToButton.style.left = absLeftPos + 'px';
