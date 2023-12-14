@@ -51,8 +51,10 @@ function showButton() {
         let range = window.getSelection().getRangeAt(0);
         let rect = range.getBoundingClientRect();
         button.style.display = 'block';
-        button.style.top = rect.bottom + 'px';
-        button.style.left = rect.right + 'px';
+        let absTopPos = rect.top + window.scrollY - button.offsetHeight;
+        let absLeftPos = rect.left + window.scrollX + (rect.width - button.offsetWidth);
+        button.style.top = absTopPos + 'px';
+        button.style.left = absLeftPos + 'px';
 
         button.onclick = async function () {
             const chunkEmbs = embs[highlight.chunkId];
