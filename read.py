@@ -263,7 +263,8 @@ def write_html(
     f.write('<!DOCTYPE html><html>')
     f.write(get_html_head(title))
     f.write('<body>\n')
-    f.write('<button id="highlightButton">Find</button>\n')
+    f.write('<button id="goToButton" class="navButtonStyle">Find</button>\n')
+    f.write('<button id="returnButton" class="navButtonStyle">Back</button>\n')
     for section, chapters in section_chapters:
         if section is not None:
             f.write(f'<details><summary>{section.name}</summary>\n')

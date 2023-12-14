@@ -15,10 +15,10 @@ p {
 }
 
 details {
-    padding: 5px;
+  padding: 5px;
 }
 
-#highlightButton {
+.navButtonStyle {
   display: none;
   position: absolute;
   background-color: #4CAF50;

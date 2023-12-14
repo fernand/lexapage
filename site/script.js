@@ -45,18 +45,18 @@ function showButton() {
     if (typeof embs == undefined)
         return;
     let highlight = getHighlightedText();
-    let button = document.getElementById('highlightButton');
+    let goToButton = document.getElementById('goToButton');
 
     if (highlight && highlight.text.length > 0) {
         let range = window.getSelection().getRangeAt(0);
         let rect = range.getBoundingClientRect();
-        button.style.display = 'block';
-        let absTopPos = rect.top + window.scrollY - button.offsetHeight;
-        let absLeftPos = rect.left + window.scrollX + (rect.width - button.offsetWidth);
-        button.style.top = absTopPos + 'px';
-        button.style.left = absLeftPos + 'px';
+        goToButton.style.display = 'block';
+        let absTopPos = rect.top + window.scrollY - goToButton.offsetHeight;
+        let absLeftPos = rect.left + window.scrollX + (rect.width - goToButton.offsetWidth);
+        goToButton.style.top = absTopPos + 'px';
+        goToButton.style.left = absLeftPos + 'px';
 
-        button.onclick = async function () {
+        goToButton.onclick = async function () {
             const chunkEmbs = embs[highlight.chunkId];
             highlight.detailsElement.open = true;
             let embedding = await getEmbedding(highlight.text);
@@ -72,12 +72,29 @@ function showButton() {
             let paragraphId = `${highlight.chunkId},${bestIdx}`;
             let paragraph = document.getElementById(paragraphId);
 
-            paragraph.scrollIntoView({ inline: 'center' });
+            paragraph.scrollIntoView({block: 'center'});
             paragraph.style.backgroundColor = 'yellow';
+            goToButton.style.display = 'none';
+
+            // Make the Back button appear.
+            let pRect = paragraph.getBoundingClientRect();
+            let returnButton = document.getElementById('returnButton');
+            returnButton.style.display = 'block';
+            console.log(pRect.top + window.scrollY, pRect.left + window.scrollX);
+            let absTopPos = pRect.top + window.scrollY - returnButton.offsetHeight;
+            let absLeftPos = pRect.left + window.scrollX + (pRect.width - returnButton.offsetWidth);
+            returnButton.style.top = absTopPos + 'px';
+            returnButton.style.left = absLeftPos + 'px';
+            returnButton.onclick = () => {
+                highlight.detailsElement.open = false;
+                highlight.detailsElement.scrollIntoView(true);
+                returnButton.style.display = 'none';
+            };
+
             setTimeout(() => paragraph.style.backgroundColor = '', 2000);
         };
     } else {
-        button.style.display = 'none';
+        goToButton.style.display = 'none';
     }
 }
 
