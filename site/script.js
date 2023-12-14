@@ -104,7 +104,7 @@ function showButton() {
             returnButton.style.left = absLeftPos + 'px';
             returnButton.onclick = () => {
                 highlight.detailsElement.open = false;
-                highlight.detailsElement.scrollIntoView(true);
+                highlight.detailsElement.scrollIntoView({block: 'center'});
                 returnButton.style.display = 'none';
             };
 
