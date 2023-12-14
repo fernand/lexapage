@@ -33,10 +33,12 @@ function dotProduct(a, b) {
 
 function getHighlightedText() {
     let selection = window.getSelection();
-    let parentId = selection.anchorNode.parentElement.id;
-    if (parentId == '')
+    let element = selection.anchorNode.parentElement;
+    let detailsElement = element.parentElement;
+    // Only allow selections where we manually set an id (the chunk id).
+    if (element.id == '')
         return;
-    return { text: selection.toString(), chunkId: parentId };
+    return { text: selection.toString(), chunkId: element.id, detailsElement: detailsElement};
 }
 
 function showButton() {
@@ -54,6 +56,7 @@ function showButton() {
 
         button.onclick = async function () {
             const chunkEmbs = embs[highlight.chunkId];
+            highlight.detailsElement.open = true;
             let embedding = await getEmbedding(highlight.text);
             let bestIdx = -1;
             let bestSimilarity = 0;
